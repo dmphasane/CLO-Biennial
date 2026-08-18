@@ -161,6 +161,7 @@ select[multiple]{height:auto;min-height:80px;}
     <button class="nav-btn" onclick="showPage('exceptions', this)">⚠️ Exceptions <span id="exc-count-badge" class="exc-count" style="display:none">0</span></button>
     <button class="nav-btn" onclick="showPage('reports', this)">📋 Reports</button>
     <button class="nav-btn" onclick="showPage('rooms', this)">🛏 Rooms</button>
+    <button class="nav-btn" onclick="showPage('comms', this)">📧 Communications</button>
     <button class="nav-btn" onclick="showPage('audit', this)">🔒 Audit Log</button>
   </nav>
   <main>
@@ -243,6 +244,7 @@ select[multiple]{height:auto;min-height:80px;}
           <div class="card-title" style="margin-bottom:0;">Imported Entries</div>
           <button class="btn btn-danger btn-sm" onclick="clearAllEntries()">🗑 Clear All Entries</button>
           <button class="btn btn-primary btn-sm" onclick="rerunMatching()">🔄 Re-run Matching</button>
+          <button class="btn btn-warning btn-sm" onclick="recalcAllLedgers()">📊 Recalc All Ledgers</button>
           <button class="btn btn-danger btn-sm" onclick="fullReset()">⚠️ Full Reset</button>
         </div>
         <div class="filter-bar">
@@ -396,6 +398,75 @@ select[multiple]{height:auto;min-height:80px;}
       </div>
     </div>
 
+    <!-- ── COMMUNICATIONS ── -->
+    <div id="page-comms" class="page">
+      <div class="flex justify-between items-center mb-4">
+        <div class="card-title" style="font-size:20px;margin-bottom:0;">📧 Communications – Contribution Statements</div>
+        <div class="flex gap-2">
+          <button class="btn btn-primary btn-sm" onclick="bulkSendEmails()">📤 Bulk Send All</button>
+          <button class="btn btn-outline btn-sm" onclick="bulkExportLettersPDF()">🖨 Export All as PDF</button>
+        </div>
+      </div>
+      <div class="card mb-4">
+        <div class="card-title">Letter Settings</div>
+        <div class="row">
+          <div class="col-half">
+            <div class="form-group"><label>Financial Secretary Name</label>
+              <input id="comms-finsec-name" value="Mr Dumisani Mphasane" /></div>
+            <div class="form-group"><label>Financial Secretary Email</label>
+              <input id="comms-finsec-email" value="financial.secretary@nedlo.org.za" /></div>
+            <div class="form-group"><label>Financial Secretary Cell</label>
+              <input id="comms-finsec-cell" value="" /></div>
+          </div>
+          <div class="col-half">
+            <div class="form-group"><label>Final Payment Deadline</label>
+              <input id="comms-deadline" value="31 May 2027" /></div>
+            <div class="form-group"><label>Letter Date</label>
+              <input id="comms-date" value="" placeholder="e.g. 01 August 2026"/></div>
+            <div class="form-group"><label>Reference No. Prefix</label>
+              <input id="comms-ref-prefix" value="NEDLO/STOKVEL/2027/" /></div>
+          </div>
+        </div>
+      </div>
+      <div class="filter-bar mb-4">
+        <div class="form-group"><label>Filter Conference</label>
+          <select id="comms-filter-conf" onchange="renderCommsTable()">
+            <option value="">All Conferences</option>
+            <option>ECLO</option><option>NCLO</option><option>WCLO</option>
+            <option>OCLO</option><option>MMMCLO</option>
+          </select>
+        </div>
+        <div class="form-group"><label>Filter Status</label>
+          <select id="comms-filter-status" onchange="renderCommsTable()">
+            <option value="">All Members</option>
+            <option value="outstanding">Has Outstanding Balance</option>
+            <option value="current">Fully Current</option>
+            <option value="noemail">No Email Address</option>
+          </select>
+        </div>
+        <div class="form-group"><label>Search</label>
+          <input type="text" id="comms-search" placeholder="Name or reference…" oninput="renderCommsTable()"/>
+        </div>
+      </div>
+      <div class="card">
+        <div id="comms-table-wrap" class="table-wrap"></div>
+      </div>
+      <!-- Letter Preview Modal -->
+      <div id="letter-modal" class="modal-backdrop" style="display:none;">
+        <div class="modal" style="width:720px;max-width:98vw;">
+          <div class="flex justify-between items-center mb-4">
+            <div class="modal-title" style="margin-bottom:0;">Contribution Confirmation Letter</div>
+            <div class="flex gap-2">
+              <button class="btn btn-primary btn-sm" onclick="sendLetterEmail()">📤 Send Email</button>
+              <button class="btn btn-outline btn-sm" onclick="printLetter()">🖨 Print / Save PDF</button>
+              <button class="btn btn-outline btn-sm" onclick="closeLetterModal()">✕ Close</button>
+            </div>
+          </div>
+          <div id="letter-preview"></div>
+        </div>
+      </div>
+    </div>
+
     <!-- ── AUDIT LOG ── -->
     <div id="page-audit" class="page">
       <div class="card-title" style="font-size:20px;margin-bottom:16px;">🔒 Audit Log</div>
@@ -436,12 +507,12 @@ select[multiple]{height:auto;min-height:80px;}
       <div class="col-half">
         <div class="form-group"><label>Accommodation Option *</label>
           <select id="m-option" onchange="updateExpected()">
-            <option value="OPT-1">OPT-1 – Sandton Sun Not Sharing – R2 060.42/mo</option>
-            <option value="OPT-2">OPT-2 – Sandton Sun Sharing – R1 319.79/mo</option>
-            <option value="OPT-3">OPT-3 – Sandton Towers Not Sharing – R2 185.42/mo</option>
-            <option value="OPT-4">OPT-4 – Sandton Towers Sharing – R1 298.79/mo</option>
-            <option value="OPT-5">OPT-5 – Garden Court Not Sharing – R1 160.42/mo</option>
-            <option value="OPT-6">OPT-6 – Garden Court Sharing – R846.88/mo</option>
+            <option value="OPT-1">OPT-1 – Sandton Sun Not Sharing – R2 122.92/mo</option>
+            <option value="OPT-2">OPT-2 – Sandton Sun Sharing – R1 382.29/mo</option>
+            <option value="OPT-3">OPT-3 – Sandton Towers Not Sharing – R2 247.92/mo</option>
+            <option value="OPT-4">OPT-4 – Sandton Towers Sharing – R1 361.29/mo</option>
+            <option value="OPT-5">OPT-5 – Garden Court Not Sharing – R1 222.92/mo</option>
+            <option value="OPT-6">OPT-6 – Garden Court Sharing – R909.38/mo</option>
             <option value="OPT-7">OPT-7 – Once Off Payment – Flexible amount</option>
           </select></div>
       </div>
@@ -477,6 +548,38 @@ select[multiple]{height:auto;min-height:80px;}
       <button class="btn btn-outline" onclick="closeMemberModal()">Cancel</button>
       <button class="btn btn-primary" onclick="saveMember()">Save Member</button>
     </div>
+  </div>
+</div>
+
+<!-- ════ MERGE MEMBERS MODAL ════ -->
+<div id="merge-modal" class="modal-backdrop" style="display:none">
+  <div class="modal" style="width:700px;">
+    <div class="modal-title">🔗 Merge Duplicate Members</div>
+    <div class="alert alert-warn mb-4">Select the duplicate member to merge INTO the primary. All bank entries from the duplicate will be transferred to the primary. The duplicate will then be deleted.</div>
+    <div id="merge-primary-info" class="mb-4"></div>
+    <div class="form-group"><label>Merge WITH (select the duplicate to remove)</label>
+      <select id="merge-target-sel" onchange="previewMerge()" style="font-size:13px;"></select>
+    </div>
+    <div id="merge-preview" class="mb-4"></div>
+    <div id="merge-error" class="alert alert-error" style="display:none"></div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="document.getElementById('merge-modal').style.display='none'">Cancel</button>
+      <button class="btn btn-warning" onclick="executeMerge()">🔗 Confirm Merge</button>
+    </div>
+  </div>
+</div>
+
+<!-- ════ MEMBER LEDGER MODAL ════ -->
+<div id="ledger-modal" class="modal-backdrop" style="display:none">
+  <div class="modal" style="width:860px;max-width:98vw;">
+    <div class="flex justify-between items-center" style="margin-bottom:16px;">
+      <div class="modal-title" style="margin-bottom:0;" id="ledger-modal-title">Member Ledger</div>
+      <div class="flex gap-2">
+        <button class="btn btn-primary btn-sm" onclick="forcRecalcLedger()">🔄 Recalculate</button>
+        <button class="btn btn-outline btn-sm" onclick="document.getElementById('ledger-modal').style.display='none'">✕ Close</button>
+      </div>
+    </div>
+    <div id="ledger-modal-body"></div>
   </div>
 </div>
 
@@ -535,12 +638,12 @@ select[multiple]{height:auto;min-height:80px;}
 // CONSTANTS & DOMAIN DATA
 // ═══════════════════════════════════════════════════════════
 const OPTIONS = {
-  'OPT-1': { hotel:'Sandton Sun', type:'Not Sharing', total:2060.42, accom:1647.92, reg:412.50 },
-  'OPT-2': { hotel:'Sandton Sun', type:'Sharing',     total:1319.79, accom: 907.29, reg:412.50 },
-  'OPT-3': { hotel:'Sandton Towers', type:'Not Sharing', total:2185.42, accom:1772.92, reg:412.50 },
-  'OPT-4': { hotel:'Sandton Towers', type:'Sharing',     total:1298.79, accom: 886.29, reg:412.50 },
-  'OPT-5': { hotel:'Garden Court',   type:'Not Sharing', total:1160.42, accom: 747.92, reg:412.50 },
-  'OPT-6': { hotel:'Garden Court',   type:'Sharing',     total: 846.88, accom: 434.38, reg:412.50 },
+  'OPT-1': { hotel:'Sandton Sun', type:'Not Sharing', total:2122.92, accom:1647.92, reg:475.00 },
+  'OPT-2': { hotel:'Sandton Sun', type:'Sharing',     total:1382.29, accom: 907.29, reg:475.00 },
+  'OPT-3': { hotel:'Sandton Towers', type:'Not Sharing', total:2247.92, accom:1772.92, reg:475.00 },
+  'OPT-4': { hotel:'Sandton Towers', type:'Sharing',     total:1361.29, accom: 886.29, reg:475.00 },
+  'OPT-5': { hotel:'Garden Court',   type:'Not Sharing', total:1222.92, accom: 747.92, reg:475.00 },
+  'OPT-6': { hotel:'Garden Court',   type:'Sharing',     total: 909.38, accom: 434.38, reg:475.00 },
   'OPT-7': { hotel:'N/A',            type:'Once Off Payment', total:0, accom:0, reg:0, onceOff:true, flexAmount:true },
 };
 const CONF_CODES = ['ECLO','NCLO','WCLO','OCLO','MMMCLO'];
@@ -638,6 +741,7 @@ function showPage(name, btn){
   if(name==='statements') renderEntriesTable();
   if(name==='exceptions') renderExceptions();
   if(name==='rooms') renderRooms();
+  if(name==='comms') renderCommsTable();
   if(name==='audit') renderAuditTable();
 }
 
@@ -700,7 +804,25 @@ function auditLog(action, detail){
   });
   saveDB();
 }
+function updateAllMemberRates(){
+  let updated = 0;
+  DB.members.forEach(m=>{
+    const o = OPTIONS[m.accommodationOption];
+    if(!o) return;
+    if(o.flexAmount) return; // skip flex members
+    if(m.expectedMonthlyTotal !== o.total || m.expectedAccom !== o.accom || m.expectedReg !== o.reg){
+      m.expectedMonthlyTotal = o.total;
+      m.expectedAccom = o.accom;
+      m.expectedReg = o.reg;
+      updated++;
+    }
+  });
+  if(updated > 0) saveDB();
+}
+
 function renderAll(){
+  // Auto-update all member records to latest option rates
+  updateAllMemberRates();
   renderDashboard();
   renderMembersTable();
   renderEntriesTable();
@@ -866,6 +988,216 @@ function saveMember(){
   renderMembersTable();
   renderDashboard();
 }
+let ledgerMemberId = null;
+function viewMemberLedger(id){
+  ledgerMemberId = id;
+  const m = DB.members.find(x=>x.id===id); if(!m) return;
+  document.getElementById('ledger-modal-title').textContent = `Ledger: ${m.fullName} (${m.paymentRef})`;
+  renderLedgerBody(m);
+  document.getElementById('ledger-modal').style.display='flex';
+}
+function forcRecalcLedger(){
+  if(!ledgerMemberId) return;
+  const m = DB.members.find(x=>x.id===ledgerMemberId); if(!m) return;
+  // Reset ledger
+  m.ledger={};
+  CONTRIB_MONTHS.forEach(mk=>{ m.ledger[mk.key]={status:'NOT_PAID',entryId:null,received:0,accom:0,reg:0}; });
+  // Re-allocate all matched entries for this member in chronological order
+  const memberEntries = DB.entries
+    .filter(e=>e.linkedMemberId===m.id && e.matchStatus==='MATCHED')
+    .sort((a,b)=>a.txnDate.localeCompare(b.txnDate));
+  const expected = m.expectedMonthlyTotal;
+  const isFlexAmount = OPTIONS[m.accommodationOption]?.flexAmount;
+  memberEntries.forEach(e=>{
+    const monthsCovered = (isFlexAmount || expected<=0) ? 1 : Math.max(1, Math.round(e.creditAmount/expected));
+    let allocated = 0;
+    for(let j=0; j<CONTRIB_MONTHS.length && allocated<monthsCovered; j++){
+      const mk = CONTRIB_MONTHS[j].key;
+      // Find unpaid slots in order from June 2026 onwards
+      if(!m.ledger[mk]) m.ledger[mk]={status:'NOT_PAID',entryId:null,received:0,accom:0,reg:0};
+      if(m.ledger[mk].status==='NOT_PAID'){
+        const monthAmt = isFlexAmount ? e.creditAmount : Math.min(expected, e.creditAmount - allocated*expected);
+        if(monthAmt<=0) break;
+        m.ledger[mk].status='PAID';
+        m.ledger[mk].entryId=e.id;
+        m.ledger[mk].received=parseFloat(monthAmt.toFixed(2));
+        m.ledger[mk].accom=isFlexAmount?0:parseFloat(Math.max(0,monthAmt-m.expectedReg).toFixed(2));
+        m.ledger[mk].reg=isFlexAmount?monthAmt:Math.min(m.expectedReg,monthAmt);
+        allocated++;
+        if(isFlexAmount) break; // flex = lump sum, one slot
+      }
+    }
+  });
+  saveDB(); renderLedgerBody(m); renderDashboard();
+  auditLog('LedgerRecalc',`Recalculated ledger for ${m.paymentRef}`);
+}
+function renderLedgerBody(m){
+  const isFlexAmount = OPTIONS[m.accommodationOption]?.flexAmount;
+  const totalExp12 = isFlexAmount ? 0 : m.expectedMonthlyTotal*12;
+  // All entries linked to this member
+  const entries = DB.entries.filter(e=>e.linkedMemberId===m.id).sort((a,b)=>a.txnDate.localeCompare(b.txnDate));
+  const totalReceived = entries.filter(e=>e.matchStatus==='MATCHED').reduce((s,e)=>s+e.creditAmount,0);
+  const outstanding = Math.max(0, totalExp12-totalReceived);
+  const isFullyPaid = !isFlexAmount && outstanding<=0.05;
+  let html = `<div class="${isFullyPaid?'alert alert-success':'alert alert-warn'} mb-4">
+    ${isFullyPaid?'✅ <strong>FULLY PAID</strong>':'⚠ <strong>Outstanding: '+fmt(outstanding)+'</strong>'}
+    &nbsp;|&nbsp; Total Expected (12 mo): <strong>${isFlexAmount?'Flex':fmt(totalExp12)}</strong>
+    &nbsp;|&nbsp; Total Matched Entries: <strong>${fmt(totalReceived)}</strong>
+    &nbsp;|&nbsp; Entries: <strong>${entries.length}</strong>
+  </div>`;
+  // Month-by-month ledger
+  html+=`<div style="font-weight:700;margin-bottom:6px;color:var(--primary);">Month Allocations</div>`;
+  html+=`<div class="table-wrap mb-4"><table><thead><tr>
+    <th>Month</th><th class="text-right">Expected</th><th class="text-right">Received</th>
+    <th class="text-right">Accom</th><th class="text-right">Reg</th><th>Status</th><th>Linked Entry</th>
+  </tr></thead><tbody>`;
+  CONTRIB_MONTHS.forEach(mo=>{
+    const slot=m.ledger?.[mo.key];
+    const entry=slot?.entryId?DB.entries.find(e=>e.id===slot.entryId):null;
+    const isPaid=slot?.status==='PAID';
+    html+=`<tr style="background:${isPaid?'#f0fdf4':slot?.status==='NOT_PAID'?'#fef2f2':'#fafafa'}">
+      <td>${mo.label}</td>
+      <td class="text-right">${isFlexAmount?'Flex':fmt(m.expectedMonthlyTotal)}</td>
+      <td class="text-right font-bold">${slot?.received?fmt(slot.received):'—'}</td>
+      <td class="text-right">${slot?.accom?fmt(slot.accom):'—'}</td>
+      <td class="text-right">${slot?.reg?fmt(slot.reg):'—'}</td>
+      <td>${isPaid?'<span class="badge badge-paid">PAID</span>':'<span class="badge badge-notpaid">NOT PAID</span>'}</td>
+      <td style="font-size:11px;">${entry?entry.txnDate+' – '+entry.referenceRaw+' – '+fmt(entry.creditAmount):'—'}</td>
+    </tr>`;
+  });
+  html+=`</tbody></table></div>`;
+  // All raw entries
+  html+=`<div style="font-weight:700;margin-bottom:6px;color:var(--primary);">All Bank Entries Linked to This Member</div>`;
+  if(!entries.length){ html+='<p class="text-muted" style="padding:8px;">No entries.</p>'; }
+  else {
+    html+=`<div class="table-wrap"><table><thead><tr>
+      <th>Date</th><th>Reference</th><th class="text-right">Amount</th><th>Allocated Month</th><th>Status</th>
+    </tr></thead><tbody>`;
+    entries.forEach(e=>{
+      html+=`<tr><td>${e.txnDate}</td><td>${e.referenceRaw}</td>
+        <td class="text-right font-bold">${fmt(e.creditAmount)}</td>
+        <td>${monthLabel(e.contribMonth)||e.contribMonth}</td>
+        <td>${statusBadge(e.matchStatus)}</td></tr>`;
+    });
+    const total=entries.filter(e=>e.matchStatus==='MATCHED').reduce((s,e)=>s+e.creditAmount,0);
+    html+=`<tr class="subtotal-row"><td colspan="2">Total Matched</td><td class="text-right">${fmt(total)}</td><td colspan="2"></td></tr>`;
+    html+=`</tbody></table></div>`;
+  }
+  document.getElementById('ledger-modal-body').innerHTML=html;
+}
+let mergePrimaryId = null;
+function startMerge(memberId){
+  mergePrimaryId = memberId;
+  const m = DB.members.find(x=>x.id===memberId); if(!m) return;
+  const entryCount = DB.entries.filter(e=>e.linkedMemberId===m.id).length;
+  document.getElementById('merge-primary-info').innerHTML=`
+    <div style="background:#eff6ff;border-radius:6px;padding:10px 14px;border:1px solid #bfdbfe;">
+      <strong>Primary (keep):</strong> ${m.fullName} &nbsp;|&nbsp; ${m.paymentRef} &nbsp;|&nbsp; ${m.conferenceCode} &nbsp;|&nbsp; ${m.accommodationOption} &nbsp;|&nbsp; ${entryCount} entries
+    </div>`;
+  // Populate target dropdown with other members (exclude self)
+  const sel = document.getElementById('merge-target-sel');
+  sel.innerHTML = '<option value="">-- Select duplicate to merge --</option>' +
+    DB.members.filter(x=>x.id!==memberId)
+      .sort((a,b)=>a.fullName.localeCompare(b.fullName))
+      .map(x=>`<option value="${x.id}">${x.fullName} – ${x.paymentRef} (${x.conferenceCode}, ${x.accommodationOption})</option>`)
+      .join('');
+  document.getElementById('merge-preview').innerHTML='';
+  document.getElementById('merge-error').style.display='none';
+  document.getElementById('merge-modal').style.display='flex';
+}
+
+function previewMerge(){
+  const targetId = document.getElementById('merge-target-sel').value;
+  const prev = document.getElementById('merge-preview');
+  if(!targetId){ prev.innerHTML=''; return; }
+  const primary = DB.members.find(x=>x.id===mergePrimaryId);
+  const target = DB.members.find(x=>x.id===targetId);
+  if(!primary||!target) return;
+  const primEntries = DB.entries.filter(e=>e.linkedMemberId===primary.id);
+  const targEntries = DB.entries.filter(e=>e.linkedMemberId===target.id);
+  prev.innerHTML=`
+    <div class="table-wrap"><table style="font-size:12px;"><thead><tr>
+      <th>Field</th><th>Primary (keep)</th><th>Duplicate (remove)</th>
+    </tr></thead><tbody>
+      <tr><td>Name</td><td class="font-bold">${primary.fullName}</td><td>${target.fullName}</td></tr>
+      <tr><td>Payment Ref</td><td>${primary.paymentRef}</td><td>${target.paymentRef}</td></tr>
+      <tr><td>Conference</td><td>${primary.conferenceCode}</td><td>${target.conferenceCode}</td></tr>
+      <tr><td>Option</td><td>${primary.accommodationOption}</td><td>${target.accommodationOption}</td></tr>
+      <tr><td>Email</td><td>${primary.email||'—'}</td><td>${target.email||'—'}</td></tr>
+      <tr><td>Phone</td><td>${primary.phone||'—'}</td><td>${target.phone||'—'}</td></tr>
+      <tr><td>Bank Entries</td><td>${primEntries.length} entries</td><td>${targEntries.length} entries</td></tr>
+    </tbody></table></div>
+    <div class="alert alert-info mt-2" style="font-size:12px;">
+      <strong>After merge:</strong> ${targEntries.length} bank entries will be transferred from "${target.fullName}" to "${primary.fullName}". 
+      The reference alias "${target.paymentRef}" will be learned. The duplicate record will be deleted.
+    </div>`;
+}
+
+function executeMerge(){
+  const targetId = document.getElementById('merge-target-sel').value;
+  const errEl = document.getElementById('merge-error');
+  if(!targetId){ errEl.textContent='Select a duplicate member.'; errEl.style.display='block'; return; }
+  const primary = DB.members.find(x=>x.id===mergePrimaryId);
+  const target = DB.members.find(x=>x.id===targetId);
+  if(!primary||!target) return;
+  if(!confirm(`Merge "${target.fullName}" INTO "${primary.fullName}"? This will transfer all entries and delete the duplicate.`)) return;
+  
+  // Transfer all bank entries from target to primary
+  DB.entries.forEach(e=>{
+    if(e.linkedMemberId===target.id){
+      e.linkedMemberId=primary.id;
+      e.referenceNorm=primary.paymentRef;
+    }
+  });
+  
+  // Learn the target's payment ref as an alias for primary
+  if(!DB.refAliases) DB.refAliases={};
+  DB.refAliases[target.paymentRef] = primary.id;
+  if(target.paymentRef !== normalize(target.fullName)){
+    DB.refAliases[normalize(target.conferenceCode+'-'+target.fullName)] = primary.id;
+  }
+  
+  // Copy missing info from target to primary
+  if(!primary.email && target.email) primary.email=target.email;
+  if(!primary.phone && target.phone) primary.phone=target.phone;
+  if(!primary.localChurch && target.localChurch) primary.localChurch=target.localChurch;
+  
+  // Remove the duplicate
+  DB.members = DB.members.filter(x=>x.id!==target.id);
+  
+  // Recalculate primary's ledger
+  primary.ledger={};
+  CONTRIB_MONTHS.forEach(mk=>{ primary.ledger[mk.key]={status:'NOT_PAID',entryId:null,received:0,accom:0,reg:0}; });
+  const memberEntries = DB.entries.filter(e=>e.linkedMemberId===primary.id && e.matchStatus==='MATCHED')
+    .sort((a,b)=>a.txnDate.localeCompare(b.txnDate));
+  const expected = primary.expectedMonthlyTotal;
+  const isFlexAmount = OPTIONS[primary.accommodationOption]?.flexAmount;
+  memberEntries.forEach(e=>{
+    const monthsCovered = (isFlexAmount || expected<=0) ? 1 : Math.max(1, Math.round(e.creditAmount/expected));
+    let allocated=0;
+    for(let j=0; j<CONTRIB_MONTHS.length && allocated<monthsCovered; j++){
+      const mk=CONTRIB_MONTHS[j].key;
+      if(!primary.ledger[mk]) primary.ledger[mk]={status:'NOT_PAID',entryId:null,received:0,accom:0,reg:0};
+      if(primary.ledger[mk].status==='NOT_PAID'){
+        const monthAmt = isFlexAmount ? e.creditAmount : expected;
+        primary.ledger[mk].status='PAID';
+        primary.ledger[mk].entryId=e.id;
+        primary.ledger[mk].received=parseFloat(monthAmt.toFixed(2));
+        primary.ledger[mk].accom=isFlexAmount?0:primary.expectedAccom;
+        primary.ledger[mk].reg=isFlexAmount?monthAmt:primary.expectedReg;
+        allocated++;
+        if(isFlexAmount) break;
+      }
+    }
+  });
+  
+  auditLog('MemberMerge',`Merged "${target.fullName}" (${target.paymentRef}) into "${primary.fullName}" (${primary.paymentRef}). ${memberEntries.length} entries transferred.`);
+  saveDB();
+  document.getElementById('merge-modal').style.display='none';
+  renderMembersTable(); renderDashboard();
+  alert(`Merge complete. "${target.fullName}" merged into "${primary.fullName}".`);
+}
+
 function deleteMember(id){
   // UNW-006
   const m = DB.members.find(x=>x.id===id);
@@ -911,6 +1243,8 @@ function renderMembersTable(){
       <td>${m.phone||'—'}</td>
       <td>
         <button class="btn btn-outline btn-sm" onclick="openMemberModal('${m.id}')">✏️ Edit</button>
+        <button class="btn btn-primary btn-sm" onclick="viewMemberLedger('${m.id}')">📋 Ledger</button>
+        <button class="btn btn-warning btn-sm" onclick="startMerge('${m.id}')">🔗 Merge</button>
         <button class="btn btn-danger btn-sm" onclick="deleteMember('${m.id}')">🗑</button>
       </td></tr>`;
   });
@@ -1877,57 +2211,48 @@ function allocateEntry(entry, member, amount){
     return;
   }
   
-  // Calculate how many months this payment covers
-  const monthsCovered = Math.round(amount / expected);
+  // Use floor (not round) to determine how many FULL months this covers
+  // Excess carries over as credit toward the next month
+  const monthsCovered = Math.floor(amount / expected);
   
   if(monthsCovered <= 1){
-    // Single month payment — allocate normally
+    // Single month payment (or partial) — allocate to first unpaid month
     entry.allocatedReg = Math.min(member.expectedReg, amount);
     entry.allocatedAccom = parseFloat((amount - entry.allocatedReg).toFixed(2));
     if(!member.ledger) member.ledger={};
-    const slotKey = entry.contribMonth;
+    // Find first unpaid month
+    let slotKey = entry.contribMonth;
+    for(let j=0; j<CONTRIB_MONTHS.length; j++){
+      const mk=CONTRIB_MONTHS[j].key;
+      if(!member.ledger[mk]) member.ledger[mk]={status:'NOT_PAID',entryId:null,received:0,accom:0,reg:0};
+      if(member.ledger[mk].status==='NOT_PAID'){ slotKey=mk; break; }
+    }
     if(!slotKey) return;
     if(!member.ledger[slotKey]) member.ledger[slotKey]={status:'NOT_PAID',entryId:null,received:0,accom:0,reg:0};
     const slot = member.ledger[slotKey];
     slot.status='PAID'; slot.entryId=entry.id; slot.received=parseFloat(amount.toFixed(2));
     slot.accom=entry.allocatedAccom; slot.reg=entry.allocatedReg;
   } else {
-    // Multi-month payment — spread across consecutive months
+    // Multi-month payment — fill from first unpaid month
     entry.allocatedReg = parseFloat((member.expectedReg * monthsCovered).toFixed(2));
     entry.allocatedAccom = parseFloat((member.expectedAccom * monthsCovered).toFixed(2));
     if(!member.ledger) member.ledger={};
     
-    // Find starting month and allocate forward
-    const startIdx = CONTRIB_MONTHS.findIndex(m=>m.key===entry.contribMonth);
     let allocated = 0;
-    for(let i=0; i<monthsCovered && (startIdx+i)<CONTRIB_MONTHS.length; i++){
-      const mk = CONTRIB_MONTHS[startIdx+i].key;
-      // Skip months already paid
-      if(member.ledger[mk]?.status==='PAID'){
-        // Find next unpaid month instead
-        const nextUnpaid = CONTRIB_MONTHS.slice(startIdx+i+1).find(m=>!member.ledger[m.key] || member.ledger[m.key].status!=='PAID');
-        if(nextUnpaid){
-          if(!member.ledger[nextUnpaid.key]) member.ledger[nextUnpaid.key]={status:'NOT_PAID',entryId:null,received:0,accom:0,reg:0};
-          member.ledger[nextUnpaid.key].status='PAID';
-          member.ledger[nextUnpaid.key].entryId=entry.id;
-          member.ledger[nextUnpaid.key].received=parseFloat(expected.toFixed(2));
-          member.ledger[nextUnpaid.key].accom=member.expectedAccom;
-          member.ledger[nextUnpaid.key].reg=member.expectedReg;
-          allocated++;
-        }
-        continue;
-      }
+    for(let j=0; j<CONTRIB_MONTHS.length && allocated<monthsCovered; j++){
+      const mk = CONTRIB_MONTHS[j].key;
       if(!member.ledger[mk]) member.ledger[mk]={status:'NOT_PAID',entryId:null,received:0,accom:0,reg:0};
-      member.ledger[mk].status='PAID';
-      member.ledger[mk].entryId=entry.id;
-      member.ledger[mk].received=parseFloat(expected.toFixed(2));
-      member.ledger[mk].accom=member.expectedAccom;
-      member.ledger[mk].reg=member.expectedReg;
-      allocated++;
+      if(member.ledger[mk].status==='NOT_PAID'){
+        member.ledger[mk].status='PAID';
+        member.ledger[mk].entryId=entry.id;
+        member.ledger[mk].received=parseFloat(expected.toFixed(2));
+        member.ledger[mk].accom=member.expectedAccom;
+        member.ledger[mk].reg=member.expectedReg;
+        allocated++;
+      }
     }
   }
 }
-
 function clearAllEntries(){
   if(!confirm('Clear ALL imported bank entries? Member ledgers will be reset. Learned aliases will be KEPT. This cannot be undone.')) return;
   DB.entries=[];
@@ -1981,6 +2306,66 @@ function rerunMatching(){
   saveDB(); renderAll();
   auditLog('RerunMatching',`Re-ran matching: ${resolved}/${unmatched.length} resolved`);
   alert(`Re-run complete: ${resolved} of ${unmatched.length} entries now matched.`);
+}
+
+function recalcAllLedgers(){
+  if(!confirm('Recalculate ALL member ledgers from scratch using current rates? This resets all month allocations and re-processes matched entries.')) return;
+  let count=0;
+  DB.members.forEach(m=>{
+    const o = OPTIONS[m.accommodationOption]; if(!o) return;
+    const isFlexAmount = o.flexAmount;
+    const expected = m.expectedMonthlyTotal;
+    // Reset ledger
+    m.ledger={};
+    CONTRIB_MONTHS.forEach(mk=>{ m.ledger[mk.key]={status:'NOT_PAID',entryId:null,received:0,accom:0,reg:0}; });
+    // Get all matched entries for this member, sorted by date
+    const memberEntries = DB.entries.filter(e=>e.linkedMemberId===m.id && e.matchStatus==='MATCHED')
+      .sort((a,b)=>a.txnDate.localeCompare(b.txnDate));
+    // Running balance approach: accumulate all payments, then fill months
+    let runningCredit = 0;
+    memberEntries.forEach(e=>{ runningCredit += e.creditAmount; });
+    // Now fill months from June until credit runs out
+    if(isFlexAmount){
+      // Flex: put full amount into first month
+      if(runningCredit>0 && memberEntries.length>0){
+        m.ledger['2026-06'].status='PAID';
+        m.ledger['2026-06'].entryId=memberEntries[0].id;
+        m.ledger['2026-06'].received=parseFloat(runningCredit.toFixed(2));
+        m.ledger['2026-06'].reg=runningCredit; m.ledger['2026-06'].accom=0;
+      }
+    } else {
+      // Fill months sequentially using running credit, tracking which entry pays which month
+      let creditLeft = 0;
+      let entryIdx = 0;
+      // Process entries in order, filling months as credit accumulates
+      let totalCredit = 0;
+      const entryDates = {}; // month -> entry date
+      memberEntries.forEach(e=>{
+        totalCredit += e.creditAmount;
+        // Figure out how many total months this covers so far
+        const monthsCoveredSoFar = Math.floor(totalCredit / expected);
+        // Assign this entry's date to any newly covered months
+        for(let j=0; j<CONTRIB_MONTHS.length && j<monthsCoveredSoFar; j++){
+          if(!entryDates[CONTRIB_MONTHS[j].key]) entryDates[CONTRIB_MONTHS[j].key] = e;
+        }
+      });
+      // Now fill the ledger
+      const totalMonthsCovered = expected>0 ? Math.floor(totalCredit / expected) : 0;
+      for(let j=0; j<CONTRIB_MONTHS.length && j<totalMonthsCovered; j++){
+        const mk = CONTRIB_MONTHS[j].key;
+        const entry = entryDates[mk] || memberEntries[memberEntries.length-1];
+        m.ledger[mk].status='PAID';
+        m.ledger[mk].entryId=entry?.id||null;
+        m.ledger[mk].received=parseFloat(expected.toFixed(2));
+        m.ledger[mk].accom=m.expectedAccom;
+        m.ledger[mk].reg=m.expectedReg;
+      }
+    }
+    count++;
+  });
+  saveDB(); renderAll();
+  auditLog('RecalcAllLedgers',`Recalculated ledgers for ${count} members with current rates`);
+  alert(`Recalculated ${count} member ledgers. All allocations now use current rates.`);
 }
 
 function renderEntriesTable(){
@@ -2272,7 +2657,7 @@ function renderDashboard(){
   const elapsed = elapsedMonths();
   const totalMembers = DB.members.length;
   let fullyCurrent=0, hasMissed=0;
-  let totalExpected=0, totalReceived=0;
+  let totalExpected=0, totalReceivedLedger=0;
 
   DB.members.forEach(m=>{
     let missed=0;
@@ -2280,16 +2665,27 @@ function renderDashboard(){
       const slot=m.ledger?.[mo.key];
       const exp=m.expectedMonthlyTotal;
       totalExpected += exp;
-      if(slot?.status==='PAID'){ totalReceived+=slot.received; }
+      if(slot?.status==='PAID'){ totalReceivedLedger+=slot.received||0; }
       else missed++;
     });
     if(missed===0) fullyCurrent++; else hasMissed++;
   });
+  
+  // Use actual matched entry totals for the true "allocated to members" figure
+  const totalReceived = DB.entries.filter(e=>e.matchStatus==='MATCHED').reduce((s,e)=>s+e.creditAmount, 0);
   const variance=totalExpected-totalReceived;
 
   // Calculate total amount in exceptions
   const exceptions = getExceptions();
   const totalExcAmount = exceptions.reduce((sum,e)=>sum+e.creditAmount, 0);
+  
+  // Total bank credits (ALL entries in system regardless of status)
+  const totalBankCredits = DB.entries.reduce((sum,e)=>sum+e.creditAmount, 0);
+  const totalMatchedCredits = DB.entries.filter(e=>e.matchStatus==='MATCHED').reduce((sum,e)=>sum+e.creditAmount, 0);
+  const unmatchedCount = DB.entries.filter(e=>e.matchStatus==='UNMATCHED').length;
+  const unmatchedAmt = DB.entries.filter(e=>e.matchStatus==='UNMATCHED').reduce((s,e)=>s+e.creditAmount, 0);
+  const duplicateAmt = DB.entries.filter(e=>e.matchStatus==='DUPLICATE').reduce((s,e)=>s+e.creditAmount, 0);
+  const reconGap = totalBankCredits - totalReceived - totalExcAmount;
 
   // STD-004 summary
   document.getElementById('dashboard-stats').innerHTML=`
@@ -2297,12 +2693,17 @@ function renderDashboard(){
     <div class="stat-card" style="border-left-color:var(--success)"><div class="val" style="color:var(--success)">${fullyCurrent}</div><div class="lbl">Fully Current</div></div>
     <div class="stat-card" style="border-left-color:var(--danger)"><div class="val" style="color:var(--danger)">${hasMissed}</div><div class="lbl">Members with Missed Months</div></div>
     <div class="stat-card"><div class="val">${fmt(totalExpected)}</div><div class="lbl">Total Expected to Date</div></div>
-    <div class="stat-card" style="border-left-color:var(--success)"><div class="val" style="color:var(--success)">${fmt(totalReceived)}</div><div class="lbl">Total Receipts to Date</div></div>
+    <div class="stat-card" style="border-left-color:var(--success)"><div class="val" style="color:var(--success)">${fmt(totalBankCredits)}</div><div class="lbl">Total Bank Credits (All Entries)</div></div>
+    <div class="stat-card" style="border-left-color:var(--success)"><div class="val" style="color:var(--success)">${fmt(totalReceived)}</div><div class="lbl">Allocated to Members</div></div>
     <div class="stat-card" style="border-left-color:${variance>0?'var(--danger)':'var(--success)'}">
       <div class="val" style="color:${variance>0?'var(--danger)':'var(--success)'}">${fmt(variance)}</div>
-      <div class="lbl">Outstanding Balance</div></div>
+      <div class="lbl">Outstanding vs Expected</div></div>
     <div class="stat-card" style="border-left-color:var(--warning)"><div class="val" style="color:var(--warning)">${exceptions.length}</div><div class="lbl">Unresolved Exceptions</div></div>
-    <div class="stat-card" style="border-left-color:var(--warning)"><div class="val" style="color:var(--warning)">${fmt(totalExcAmount)}</div><div class="lbl">Exception Amount (Unallocated)</div></div>
+    <div class="stat-card" style="border-left-color:var(--warning)"><div class="val" style="color:var(--warning)">${fmt(totalExcAmount)}</div><div class="lbl">Exception Amount</div></div>
+    <div class="stat-card" style="border-left-color:var(--danger)"><div class="val" style="color:var(--danger)">${unmatchedCount}</div><div class="lbl">Unmatched Entries</div></div>
+    <div class="stat-card" style="border-left-color:var(--danger)"><div class="val" style="color:var(--danger)">${fmt(unmatchedAmt)}</div><div class="lbl">Unmatched Amount</div></div>
+    <div class="stat-card" style="border-left-color:var(--info)"><div class="val" style="color:var(--info)">${fmt(duplicateAmt)}</div><div class="lbl">Duplicate Amount</div></div>
+    <div class="stat-card" style="border-left-color:var(--primary)"><div class="val" style="color:var(--primary)">${DB.members.filter(m=>DB.entries.some(e=>e.linkedMemberId===m.id&&e.matchStatus==='MATCHED')).length} / ${totalMembers}</div><div class="lbl">Members Paying vs Registered</div></div>
   `;
 
   // Hotel selection tiles - grouped by hotel
@@ -3079,6 +3480,412 @@ function exportRoomAllocation(){
   });
   downloadCSV(rows,'NEDLO_RoomAllocation_'+today()+'.csv');
   auditLog('RoomExport','Exported room allocation list');
+}
+
+// ═══════════════════════════════════════════════════════════
+// COMMUNICATIONS
+// ═══════════════════════════════════════════════════════════
+let currentLetterMemberId = null;
+
+function renderCommsTable(){
+  const confF = document.getElementById('comms-filter-conf')?.value||'';
+  const statusF = document.getElementById('comms-filter-status')?.value||'';
+  const search = (document.getElementById('comms-search')?.value||'').toLowerCase();
+  const elapsed = elapsedMonths();
+
+  let members = DB.members.filter(m=>{
+    if(confF && m.conferenceCode!==confF) return false;
+    if(search && !m.fullName.toLowerCase().includes(search) && !m.paymentRef.toLowerCase().includes(search)) return false;
+    if(statusF==='noemail' && m.email) return false;
+    if(statusF==='outstanding'){
+      const paid = DB.entries.filter(e=>e.linkedMemberId===m.id && e.matchStatus==='MATCHED').reduce((s,e)=>s+e.creditAmount,0);
+      const exp12 = OPTIONS[m.accommodationOption]?.flexAmount ? 0 : m.expectedMonthlyTotal * 12;
+      if(exp12>0 && paid>=exp12) return false;
+    }
+    if(statusF==='current'){
+      const paid = DB.entries.filter(e=>e.linkedMemberId===m.id && e.matchStatus==='MATCHED').reduce((s,e)=>s+e.creditAmount,0);
+      const exp12 = OPTIONS[m.accommodationOption]?.flexAmount ? 0 : m.expectedMonthlyTotal * 12;
+      if(exp12>0 && paid<exp12) return false;
+    }
+    return true;
+  });
+  members = sortMembers(members);
+
+  const el = document.getElementById('comms-table-wrap');
+  if(!members.length){ el.innerHTML='<p class="text-muted" style="padding:16px;">No members found.</p>'; return; }
+
+  let html=`<table><thead><tr>
+    <th><input type="checkbox" id="comms-select-all" onchange="document.querySelectorAll('.comms-cb').forEach(c=>c.checked=this.checked)" style="width:auto;"/></th>
+    <th>Member</th><th>Conference</th><th>Email</th><th>Option</th>
+    <th class="text-right">Total Paid</th><th class="text-right">Outstanding</th><th>Status</th><th>Actions</th>
+  </tr></thead><tbody>`;
+
+  members.forEach(m=>{
+    // Use actual matched bank entries for true total paid
+    const actualPaid = DB.entries.filter(e=>e.linkedMemberId===m.id && e.matchStatus==='MATCHED').reduce((s,e)=>s+e.creditAmount,0);
+    const isFlexAmount = OPTIONS[m.accommodationOption]?.flexAmount;
+    const totalExp12 = isFlexAmount ? 0 : m.expectedMonthlyTotal * 12;
+    const outstanding = isFlexAmount ? 0 : Math.max(0, totalExp12 - actualPaid);
+    const allPaid = isFlexAmount ? actualPaid>0 : outstanding<=0.05;
+    html+=`<tr>
+      <td><input type="checkbox" class="comms-cb" value="${m.id}" style="width:auto;"/></td>
+      <td class="font-bold">${m.fullName}</td>
+      <td><span class="badge" style="background:#dbeafe;color:#1e40af;">${m.conferenceCode}</span></td>
+      <td style="font-size:12px;">${m.email||'<span style="color:var(--danger);">No email</span>'}</td>
+      <td>${m.accommodationOption}</td>
+      <td class="text-right" style="color:var(--success);">${fmt(actualPaid)}</td>
+      <td class="text-right" style="color:${outstanding>0?'var(--danger)':'var(--success)'}">${isFlexAmount?'—':fmt(outstanding)}</td>
+      <td>${allPaid?'<span class="badge badge-paid">Current</span>':'<span class="badge badge-notpaid">Outstanding</span>'}</td>
+      <td>
+        <button class="btn btn-sm btn-primary" onclick="previewLetter('${m.id}')">👁 Preview</button>
+        ${m.email?`<button class="btn btn-sm btn-outline" onclick="quickSendEmail('${m.id}')">📤 Send</button>`:''}
+      </td>
+    </tr>`;
+  });
+  html+='</tbody></table>';
+  el.innerHTML=html;
+}
+
+function generateLetterHTML(memberId, forEmail=false){
+  const m = DB.members.find(x=>x.id===memberId); if(!m) return '';
+  const elapsed = elapsedMonths();
+  const opt = OPTIONS[m.accommodationOption]||{};
+  const isFlexAmount = opt.flexAmount;
+  const totalExpected12 = isFlexAmount ? 0 : m.expectedMonthlyTotal * 12;
+  const totalAccom12   = isFlexAmount ? 0 : m.expectedAccom * 12;
+  const totalReg12     = isFlexAmount ? 0 : m.expectedReg * 12;
+  const letterDate = document.getElementById('comms-date')?.value || new Date().toLocaleDateString('en-ZA',{day:'2-digit',month:'long',year:'numeric'});
+  const deadline   = document.getElementById('comms-deadline')?.value || '31 May 2027';
+  const finsecName  = document.getElementById('comms-finsec-name')?.value || 'Mr Dumisani Mphasane';
+  const finsecEmail = document.getElementById('comms-finsec-email')?.value || '';
+  const finsecCell  = document.getElementById('comms-finsec-cell')?.value || '';
+  const refPrefix   = document.getElementById('comms-ref-prefix')?.value || 'NEDLO/STOKVEL/2027/';
+  const refNo       = refPrefix + String(DB.members.findIndex(x=>x.id===memberId)+1).padStart(3,'0');
+  const nameParts   = m.fullName.trim().split(' ');
+  const titleSurname= nameParts.length>1 ? nameParts[nameParts.length-1] : m.fullName;
+  const optLabel    = m.accommodationOption + (opt.hotel&&opt.hotel!=='N/A' ? ` – ${opt.hotel} (${opt.type})` : ' – Once Off / Flexible');
+
+  // Build payment schedule with accom/reg split & running balance
+  let totalPaid=0, totalAccomPaid=0, totalRegPaid=0;
+  let runningBalance=totalExpected12;
+  let scheduleRows='';
+
+  // Get all actual payments for this member (unique entries by ID)
+  const memberEntries = DB.entries.filter(e=>e.linkedMemberId===m.id && e.matchStatus==='MATCHED')
+    .sort((a,b)=>a.txnDate.localeCompare(b.txnDate));
+  const uniqueEntries = [...new Map(memberEntries.map(e=>[e.id,e])).values()];
+  const actualTotalPaid = uniqueEntries.reduce((s,e)=>s+e.creditAmount, 0);
+
+  CONTRIB_MONTHS.forEach((mo, moIdx)=>{
+    const isElapsed = elapsed.some(e=>e.key===mo.key);
+    const slot = m.ledger?.[mo.key];
+    const amtDueAccom = isFlexAmount ? '—' : fmt(m.expectedAccom);
+    const amtDueReg   = isFlexAmount ? '—' : fmt(m.expectedReg);
+    const amtDueTotal = isFlexAmount ? '—' : fmt(m.expectedMonthlyTotal);
+    let amtRecAccom='—', amtRecReg='—', amtRecTotal='—', dateRec='—';
+    let status='Future', bg='#fafafa', statusColor='#6b7280';
+
+    // Determine how many months the total payments cover
+    const totalMonthsCovered = (!isFlexAmount && m.expectedMonthlyTotal>0) ? Math.floor(actualTotalPaid / m.expectedMonthlyTotal) : 0;
+    // Calculate excess after full months
+    const excessAmt = (!isFlexAmount && m.expectedMonthlyTotal>0) ? actualTotalPaid - (totalMonthsCovered * m.expectedMonthlyTotal) : 0;
+    const isMonthCovered = isFlexAmount ? (actualTotalPaid>0 && moIdx===0) : (moIdx < totalMonthsCovered);
+    const isPartialMonth = !isFlexAmount && moIdx === totalMonthsCovered && excessAmt > 0.05;
+
+    if(isMonthCovered){
+      // This month is fully covered by payments
+      const rec = isFlexAmount ? actualTotalPaid : m.expectedMonthlyTotal;
+      amtRecAccom = isFlexAmount ? '—' : fmt(m.expectedAccom);
+      amtRecReg   = isFlexAmount ? '—' : fmt(m.expectedReg);
+      amtRecTotal = fmt(rec);
+      totalPaid += rec;
+      totalAccomPaid += isFlexAmount ? 0 : m.expectedAccom;
+      totalRegPaid += isFlexAmount ? 0 : m.expectedReg;
+      const entry = slot?.entryId ? DB.entries.find(e=>e.id===slot.entryId) : 
+                    (uniqueEntries.length>0 ? uniqueEntries[Math.min(moIdx, uniqueEntries.length-1)] : null);
+      dateRec = entry?.txnDate || '—';
+      status = 'Received'; bg='#f0fdf4'; statusColor='#16a34a';
+    } else if(isPartialMonth){
+      // This month is partially covered by excess from previous payments
+      const partialReg = Math.min(m.expectedReg, excessAmt);
+      const partialAccom = Math.max(0, excessAmt - partialReg);
+      amtRecReg = fmt(partialReg);
+      amtRecAccom = partialAccom>0 ? fmt(partialAccom) : '—';
+      amtRecTotal = fmt(excessAmt);
+      totalPaid += excessAmt;
+      totalRegPaid += partialReg;
+      totalAccomPaid += partialAccom;
+      const lastEntry = uniqueEntries.length>0 ? uniqueEntries[uniqueEntries.length-1] : null;
+      dateRec = lastEntry?.txnDate || '—';
+      status = 'Partially Paid'; bg='#fefce8'; statusColor='#b45309';
+    } else if(isElapsed) {
+      status='Outstanding'; bg='#fef2f2'; statusColor='#dc2626';
+    } else {
+      status='Not Yet Due'; bg='#fafafa'; statusColor='#6b7280';
+    }
+
+    scheduleRows+=`<tr style="background:${bg};">
+      <td style="padding:5px 8px;border-bottom:1px solid #e5e7eb;">${mo.label}</td>
+      <td style="padding:5px 8px;border-bottom:1px solid #e5e7eb;text-align:right;">${amtDueAccom}</td>
+      <td style="padding:5px 8px;border-bottom:1px solid #e5e7eb;text-align:right;">${amtDueReg}</td>
+      <td style="padding:5px 8px;border-bottom:1px solid #e5e7eb;text-align:right;font-weight:600;">${amtDueTotal}</td>
+      <td style="padding:5px 8px;border-bottom:1px solid #e5e7eb;text-align:right;">${amtRecAccom}</td>
+      <td style="padding:5px 8px;border-bottom:1px solid #e5e7eb;text-align:right;">${amtRecReg}</td>
+      <td style="padding:5px 8px;border-bottom:1px solid #e5e7eb;text-align:right;font-weight:600;">${amtRecTotal}</td>
+      <td style="padding:5px 8px;border-bottom:1px solid #e5e7eb;">${dateRec}</td>
+      <td style="padding:5px 8px;border-bottom:1px solid #e5e7eb;font-weight:600;color:${statusColor};">${status}</td>
+    </tr>`;
+  });
+
+  const outstandingAmt = Math.max(0, totalExpected12 - actualTotalPaid);
+  const creditExcess = 0; // Excess is now allocated as partial payment above
+  const isFullyPaid    = !isFlexAmount && outstandingAmt <= 0.05;
+
+  // Build actual payments received section
+  let paymentsReceivedHtml = '';
+  if(uniqueEntries.length>0){
+    paymentsReceivedHtml = `
+    <div style="font-weight:700;color:#1a3a6b;margin-bottom:6px;font-size:13px;">PAYMENTS RECEIVED</div>
+    <table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:14px;">
+      <thead><tr style="background:#f0fdf4;">
+        <th style="padding:6px 10px;text-align:left;">Date Received</th>
+        <th style="padding:6px 10px;text-align:right;">Amount Received</th>
+        <th style="padding:6px 10px;text-align:left;">Bank Reference</th>
+        <th style="padding:6px 10px;text-align:left;">Months Covered</th>
+      </tr></thead><tbody>`;
+    uniqueEntries.forEach(entry=>{
+      // Find which months this entry covers
+      const coveredMonths = CONTRIB_MONTHS.filter(mo=>m.ledger?.[mo.key]?.entryId===entry.id).map(mo=>mo.label);
+      paymentsReceivedHtml += `<tr style="border-bottom:1px solid #e5e7eb;">
+        <td style="padding:5px 10px;">${entry.txnDate}</td>
+        <td style="padding:5px 10px;text-align:right;font-weight:700;">${fmt(entry.creditAmount)}</td>
+        <td style="padding:5px 10px;font-size:11px;">${entry.referenceRaw}</td>
+        <td style="padding:5px 10px;font-size:11px;">${coveredMonths.length>0?coveredMonths.join(', '):'—'}</td>
+      </tr>`;
+    });
+    paymentsReceivedHtml += `<tr style="background:#dcfce7;font-weight:700;">
+      <td style="padding:6px 10px;">TOTAL RECEIVED</td>
+      <td style="padding:6px 10px;text-align:right;">${fmt(actualTotalPaid)}</td>
+      <td colspan="2" style="padding:6px 10px;">${uniqueEntries.length} payment(s)</td>
+    </tr></tbody></table>`;
+  }
+
+  // Status banner
+  const statusBanner = isFullyPaid
+    ? `<div style="background:#dcfce7;border:1px solid #86efac;border-radius:6px;padding:12px 16px;margin-bottom:16px;display:flex;align-items:center;gap:10px;">
+        <span style="font-size:22px;">✅</span>
+        <div><strong style="color:#15803d;">FULLY PAID – Thank you!</strong><br/>
+        <span style="font-size:12px;color:#166534;">All contributions for the NEDLO Biennial 2027 Stokvel Fund have been received in full. Your accommodation and registration are confirmed.</span></div>
+      </div>`
+    : `<div style="background:#fef9c3;border:1px solid #fde047;border-radius:6px;padding:12px 16px;margin-bottom:16px;">
+        <strong style="color:#854d0e;">⚠ Outstanding Balance: ${fmt(outstandingAmt)}</strong><br/>
+        <span style="font-size:12px;color:#713f12;">Please ensure the outstanding balance is settled by <strong>${deadline}</strong> to secure your accommodation for the Biennial Session.</span>
+      </div>`;
+
+  // Closing paragraph
+  const closingParagraph = isFullyPaid
+    ? `<p style="margin-bottom:16px;font-size:12px;color:#374151;">Your contributions are fully settled. We look forward to welcoming you to the <strong>40th Lay Biennial Convention</strong> in Sandton, South Africa, from <strong>8–11 August 2027</strong>. Should you have any queries, please do not hesitate to contact the Financial Secretary's office.</p>`
+    : `<p style="margin-bottom:12px;font-size:12px;color:#374151;">Please note that the due date for Biennial Registration is <strong>31 December 2026</strong>. This deadline is essential in order for us to proceed with registering members with CLO.</p>
+       <p style="margin-bottom:12px;font-size:12px;color:#374151;">Furthermore, should the balance reflected above not be settled by <strong>${deadline}</strong>, your accommodation allocation for the Biennial Session may be affected.</p>
+       <p style="margin-bottom:12px;font-size:12px;color:#374151;">If you have already made a payment that is not reflected here, or if you believe there is an error, kindly contact the Financial Secretary's office within <strong>seven (7) days</strong> of receiving this letter.</p>
+       <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px;padding:12px 16px;margin-bottom:14px;">
+         <div style="font-weight:700;color:#1a3a6b;margin-bottom:8px;font-size:13px;">💳 BANKING DETAILS FOR PAYMENT</div>
+         <table style="width:100%;font-size:12.5px;">
+           <tr><td style="padding:3px 0;width:160px;color:#6b7280;">Account Name</td><td style="font-weight:600;">Biennial 2027 – Lay Organization Stokvel Fund</td></tr>
+           <tr><td style="padding:3px 0;color:#6b7280;">Account Number</td><td style="font-weight:700;font-size:14px;letter-spacing:1px;">63211345582</td></tr>
+           <tr><td style="padding:3px 0;color:#6b7280;">Bank</td><td>First National Bank (FNB)</td></tr>
+           <tr><td style="padding:3px 0;color:#6b7280;">Branch Code</td><td>250655</td></tr>
+           <tr style="border-top:1px solid #bfdbfe;"><td style="padding:6px 0;color:#1a3a6b;font-weight:700;">Your Payment Reference</td><td style="font-weight:800;font-size:14px;color:#1a3a6b;letter-spacing:.5px;">${m.paymentRef}</td></tr>
+         </table>
+         <p style="margin-top:8px;font-size:11px;color:#6b7280;"><em>Please use your unique reference above for every payment to ensure correct allocation.</em></p>
+       </div>
+       <p style="margin-bottom:16px;font-size:12px;color:#374151;">We thank you for your continued commitment to the NEDLO Biennial Stokvel Fund.</p>`;
+
+  return `<div style="font-family:'Segoe UI',Arial,sans-serif;font-size:13px;color:#1f2937;max-width:700px;margin:0 auto;padding:${forEmail?'0':'20px'};">
+    <!-- HEADER -->
+    <div style="display:flex;align-items:center;margin-bottom:18px;border-bottom:3px solid #1a3a6b;padding-bottom:12px;">
+      <img src="logo.png" style="width:64px;height:64px;border-radius:50%;margin-right:14px;" onerror="this.style.display='none'"/>
+      <div>
+        <div style="font-size:15px;font-weight:700;color:#1a3a6b;">NEDLO | 19th Episcopal District Lay Organisation</div>
+        <div style="font-size:13px;font-weight:600;color:#2456a4;">NEDLO BIENNIAL 2027 STOKVEL FUND</div>
+        <div style="font-size:11px;color:#6b7280;letter-spacing:.5px;">CONFIRMATION OF CONTRIBUTIONS RECEIVED</div>
+      </div>
+    </div>
+    <!-- ADDRESSEE -->
+    <table style="width:100%;margin-bottom:14px;font-size:12.5px;">
+      <tr><td style="width:130px;color:#6b7280;padding:3px 0;"><strong>Date:</strong></td><td>${letterDate}</td><td style="width:140px;color:#6b7280;"><strong>Reference No.:</strong></td><td>${refNo}</td></tr>
+      <tr><td style="color:#6b7280;padding:3px 0;"><strong>To:</strong></td><td>${m.fullName}</td><td style="color:#6b7280;"><strong>Conference:</strong></td><td>${m.conferenceCode}</td></tr>
+      <tr><td style="color:#6b7280;padding:3px 0;"><strong>Cell:</strong></td><td>${m.phone||'—'}</td><td style="color:#6b7280;"><strong>Email:</strong></td><td>${m.email||'—'}</td></tr>
+    </table>
+    <p style="margin-bottom:12px;">Dear ${titleSurname},</p>
+    <p style="margin-bottom:14px;">This letter serves to confirm the status of your contributions to the NEDLO Biennial 2027 Stokvel Fund, in accordance with your selected accommodation and Biennial registration payment option.</p>
+    <!-- STATUS BANNER -->
+    ${statusBanner}
+    <!-- OPTION SUMMARY -->
+    <div style="background:#eff6ff;border-left:4px solid #1a3a6b;padding:10px 14px;margin-bottom:14px;border-radius:4px;">
+      <div style="font-weight:700;color:#1a3a6b;margin-bottom:8px;font-size:13px;">1. SELECTED OPTION SUMMARY</div>
+      <table style="width:100%;font-size:12.5px;">
+        <tr><td style="color:#6b7280;padding:2px 0;width:230px;">Accommodation Option</td><td><strong>${optLabel}</strong></td></tr>
+        <tr><td style="color:#6b7280;padding:2px 0;">Hotel / Room Type</td><td>${opt.hotel&&opt.hotel!=='N/A'?opt.hotel+' – '+opt.type:'Once Off / Flexible'}</td></tr>
+        <tr><td style="color:#6b7280;padding:2px 0;">Biennial Registration Component</td><td><strong>${isFlexAmount?'Flexible':fmt(m.expectedReg)+' per month (R'+fmt(totalReg12).replace('R','')+' total)'}</strong></td></tr>
+        <tr><td style="color:#6b7280;padding:2px 0;">Accommodation Component</td><td><strong>${isFlexAmount?'Flexible':fmt(m.expectedAccom)+' per month (R'+fmt(totalAccom12).replace('R','')+' total)'}</strong></td></tr>
+        <tr style="border-top:1px solid #bfdbfe;"><td style="color:#1a3a6b;font-weight:700;padding:4px 0;">Monthly Instalment (Total)</td><td style="font-weight:700;color:#1a3a6b;">${isFlexAmount?'Flexible':fmt(m.expectedMonthlyTotal)+' per month over 12 months'}</td></tr>
+        <tr><td style="color:#6b7280;padding:2px 0;">Total Contribution (12 months)</td><td><strong>${isFlexAmount?'Flexible':fmt(totalExpected12)}</strong></td></tr>
+        <tr><td style="color:#6b7280;padding:2px 0;">Contribution Period</td><td>June 2026 – May 2027</td></tr>
+      </table>
+    </div>
+    <!-- EXCHANGE RATE NOTE -->
+    <div style="background:#fefce8;border-left:4px solid #eab308;padding:10px 14px;margin-bottom:14px;border-radius:4px;font-size:11.5px;color:#713f12;">
+      <strong>Note on Registration Fee Adjustment:</strong> The initial calculation of Biennial Registration was based on the prevailing exchange rate at the time, which amounted to R4,950 for the $300 fee. However, as communicated, the agreed exchange rate to manage fluctuations has been fixed at R19 per $1, resulting in a revised total of <strong>R5,700</strong>. Accordingly, all registrations have been updated across the board to reflect this adjustment, which explains the change in the figures presented.
+    </div>
+    <!-- PAYMENT SCHEDULE -->
+    <div style="font-weight:700;color:#1a3a6b;margin-bottom:6px;font-size:13px;">2. PAYMENT SCHEDULE & STATUS TO DATE</div>
+    <table style="width:100%;border-collapse:collapse;font-size:11px;margin-bottom:14px;">
+      <thead>
+        <tr style="background:#1a3a6b;color:#fff;">
+          <th style="padding:7px 8px;text-align:left;" rowspan="2">Month</th>
+          <th style="padding:7px 8px;text-align:center;border-bottom:1px solid #2456a4;" colspan="3">Amount Due</th>
+          <th style="padding:7px 8px;text-align:center;border-bottom:1px solid #2456a4;" colspan="3">Amount Received</th>
+          <th style="padding:7px 8px;text-align:left;" rowspan="2">Date Received</th>
+          <th style="padding:7px 8px;text-align:left;" rowspan="2">Status</th>
+        </tr>
+        <tr style="background:#2456a4;color:#fff;">
+          <th style="padding:5px 8px;text-align:right;">Accommodation</th>
+          <th style="padding:5px 8px;text-align:right;">Registration</th>
+          <th style="padding:5px 8px;text-align:right;">Total</th>
+          <th style="padding:5px 8px;text-align:right;">Accommodation</th>
+          <th style="padding:5px 8px;text-align:right;">Registration</th>
+          <th style="padding:5px 8px;text-align:right;">Total</th>
+        </tr>
+      </thead>
+      <tbody>${scheduleRows}
+        <tr style="background:#dbeafe;font-weight:700;font-size:11.5px;">
+          <td style="padding:7px 8px;">TOTAL</td>
+          <td style="padding:7px 8px;text-align:right;">${isFlexAmount?'—':fmt(totalAccom12)}</td>
+          <td style="padding:7px 8px;text-align:right;">${isFlexAmount?'—':fmt(totalReg12)}</td>
+          <td style="padding:7px 8px;text-align:right;">${isFlexAmount?'—':fmt(totalExpected12)}</td>
+          <td style="padding:7px 8px;text-align:right;">${fmt(totalAccomPaid)}</td>
+          <td style="padding:7px 8px;text-align:right;">${fmt(totalRegPaid)}</td>
+          <td style="padding:7px 8px;text-align:right;">${fmt(totalPaid)}</td>
+          <td style="padding:7px 8px;">—</td>
+          <td style="padding:7px 8px;color:${isFullyPaid?'#16a34a':'#dc2626'};">${isFullyPaid?'✅ PAID IN FULL':'Balance: '+fmt(outstandingAmt)}</td>
+        </tr>
+      </tbody>
+    </table>
+    <!-- PAYMENTS RECEIVED -->
+    ${paymentsReceivedHtml}
+    <!-- BALANCE SUMMARY -->
+    <div style="background:#f9fafb;border:1px solid #e5e7eb;padding:10px 14px;margin-bottom:14px;border-radius:4px;">
+      <div style="font-weight:700;color:#1a3a6b;margin-bottom:8px;font-size:13px;">3. BALANCE SUMMARY</div>
+      <table style="width:100%;font-size:12.5px;">
+        <tr><td style="padding:3px 0;width:280px;color:#6b7280;">Biennial Registration (12 months)</td><td style="text-align:right;">${isFlexAmount?'Flexible':fmt(totalReg12)}</td><td style="text-align:right;color:#16a34a;">${fmt(totalRegPaid)} received</td></tr>
+        <tr><td style="padding:3px 0;color:#6b7280;">Accommodation (12 months)</td><td style="text-align:right;">${isFlexAmount?'Flexible':fmt(totalAccom12)}</td><td style="text-align:right;color:#16a34a;">${fmt(totalAccomPaid)} received</td></tr>
+        <tr style="border-top:1px solid #e5e7eb;"><td style="padding:5px 0;font-weight:700;">Total Amount Due (Full Option)</td><td style="text-align:right;font-weight:700;">${isFlexAmount?'Flexible':fmt(totalExpected12)}</td><td></td></tr>
+        <tr><td style="padding:3px 0;font-weight:700;">Total Amount Received to Date</td><td colspan="2" style="text-align:right;font-weight:700;color:#16a34a;">${fmt(actualTotalPaid)}</td></tr>
+        ${creditExcess>0.05?`<tr><td style="padding:3px 0;color:#2456a4;">Credit Balance (excess carried forward)</td><td colspan="2" style="text-align:right;font-weight:700;color:#2456a4;">-${fmt(creditExcess)}</td></tr>`:''}
+        <tr style="border-top:2px solid #1a3a6b;"><td style="padding:5px 0;font-weight:800;font-size:14px;">Balance Outstanding</td><td colspan="2" style="text-align:right;font-weight:800;font-size:14px;color:${isFullyPaid?'#16a34a':'#dc2626'};">${isFullyPaid?'✅ NIL – FULLY PAID':fmt(outstandingAmt)}</td></tr>
+      </table>
+    </div>
+    ${closingParagraph}
+    <div style="border-top:1px solid #e5e7eb;padding-top:12px;font-size:12px;">
+      <p>Yours in service,</p>
+      <p style="margin-top:8px;"><strong>${finsecName}</strong><br/>
+      Financial Secretary, NEDLO<br/>
+      19th Episcopal District Lay Organisation, AME Church<br/>
+      ${finsecEmail?`<a href="mailto:${finsecEmail}" style="color:#2456a4;">${finsecEmail}</a>`:''}${finsecEmail&&finsecCell?' | ':''}${finsecCell}</p>
+      <p style="margin-top:8px;color:#9ca3af;font-size:10px;">NEDLO Biennial Stokvel Fund • Financial Secretary's Office</p>
+    </div>
+  </div>`;
+}
+
+function previewLetter(memberId){
+  currentLetterMemberId = memberId;
+  const m = DB.members.find(x=>x.id===memberId);
+  document.getElementById('letter-preview').innerHTML = generateLetterHTML(memberId);
+  document.getElementById('letter-modal').style.display='flex';
+  auditLog('LetterPreview',`Previewed letter for ${m?.paymentRef}`);
+}
+
+function closeLetterModal(){
+  document.getElementById('letter-modal').style.display='none';
+  currentLetterMemberId=null;
+}
+
+function sendLetterEmail(){
+  if(!currentLetterMemberId) return;
+  quickSendEmail(currentLetterMemberId);
+}
+
+function quickSendEmail(memberId){
+  const m = DB.members.find(x=>x.id===memberId);
+  if(!m?.email){ alert('No email address on file for '+m?.fullName+'. Please update the member record first.'); return; }
+  const elapsed = elapsedMonths();
+  let totalPaid=0;
+  elapsed.forEach(mo=>{ if(m.ledger?.[mo.key]?.status==='PAID') totalPaid+=m.ledger[mo.key].received||0; });
+  const isFlexAmount = OPTIONS[m.accommodationOption]?.flexAmount;
+  const totalExpected12 = isFlexAmount ? 0 : m.expectedMonthlyTotal * 12;
+  const outstanding = Math.max(0, totalExpected12 - totalPaid);
+  const subject = encodeURIComponent(`NEDLO Biennial 2027 Stokvel Fund – Contribution Statement for ${m.fullName}`);
+  const deadline = document.getElementById('comms-deadline')?.value||'31 May 2027';
+  const finsecName = document.getElementById('comms-finsec-name')?.value||'Mr Dumisani Mphasane';
+  const body = encodeURIComponent(
+    `Dear ${m.fullName.split(' ').pop()},\n\n`+
+    `Please find attached your NEDLO Biennial 2027 Stokvel Fund contribution statement.\n\n`+
+    `SUMMARY:\n`+
+    `• Option: ${m.accommodationOption}${OPTIONS[m.accommodationOption]?.hotel&&OPTIONS[m.accommodationOption]?.hotel!=='N/A'?' – '+OPTIONS[m.accommodationOption]?.hotel+' ('+OPTIONS[m.accommodationOption]?.type+')':''}\n`+
+    `• Total Received to Date: ${fmt(totalPaid)}\n`+
+    `• Balance Outstanding: ${isFlexAmount?'Flexible':fmt(outstanding)}\n`+
+    `• Payment Deadline: ${deadline}\n\n`+
+    `Please log in to the NEDLO portal or contact us if you have any queries.\n\n`+
+    `Yours in service,\n${finsecName}\nFinancial Secretary, NEDLO`
+  );
+  window.open(`mailto:${m.email}?subject=${subject}&body=${body}`);
+  auditLog('EmailSent',`Sent email to ${m.fullName} (${m.email})`);
+}
+
+function bulkSendEmails(){
+  const checked = Array.from(document.querySelectorAll('.comms-cb:checked'));
+  const ids = checked.length>0 ? checked.map(c=>c.value) : DB.members.map(m=>m.id);
+  const withEmail = ids.filter(id=>DB.members.find(m=>m.id===id)?.email);
+  const noEmail = ids.length - withEmail.length;
+  if(!withEmail.length){ alert('No members with email addresses found.'); return; }
+  if(!confirm(`Send contribution statements to ${withEmail.length} members?${noEmail>0?' ('+noEmail+' skipped — no email)':''}`)){ return; }
+  // Open mailto for each (opens default email client)
+  withEmail.forEach((id,idx)=>{
+    setTimeout(()=>quickSendEmail(id), idx*500); // stagger by 500ms
+  });
+  auditLog('BulkEmail',`Bulk sent ${withEmail.length} contribution statement emails`);
+}
+
+function printLetter(){
+  if(!currentLetterMemberId) return;
+  const m = DB.members.find(x=>x.id===currentLetterMemberId);
+  const html = generateLetterHTML(currentLetterMemberId);
+  const win = window.open('','_blank','width=750,height=900');
+  win.document.write(`<!DOCTYPE html><html><head><title>Contribution Statement – ${m?.fullName}</title>
+    <style>body{font-family:'Segoe UI',Arial,sans-serif;margin:20px;}@media print{body{margin:0;}}</style>
+    </head><body>${html}<script>window.onload=function(){window.print();};<\/script></body></html>`);
+  win.document.close();
+  auditLog('LetterPrint',`Printed/saved letter for ${m?.paymentRef}`);
+}
+
+function bulkExportLettersPDF(){
+  const checked = Array.from(document.querySelectorAll('.comms-cb:checked'));
+  const ids = checked.length>0 ? checked.map(c=>c.value) : DB.members.map(m=>m.id);
+  if(!confirm(`Generate printable letters for ${ids.length} members? Each will open in a new tab.`)) return;
+  ids.forEach((id,idx)=>{
+    setTimeout(()=>{
+      const m=DB.members.find(x=>x.id===id); if(!m) return;
+      const html=generateLetterHTML(id);
+      const win=window.open('','_blank','width=750,height=900');
+      if(!win){ alert('Pop-ups are blocked. Please allow pop-ups for this page.'); return; }
+      win.document.write(`<!DOCTYPE html><html><head><title>Statement – ${m.fullName}</title>
+        <style>body{font-family:'Segoe UI',Arial,sans-serif;margin:20px;}@media print{body{margin:0;}}</style>
+        </head><body>${html}<script>window.onload=function(){window.print();};<\/script></body></html>`);
+      win.document.close();
+    }, idx*300);
+  });
+  auditLog('BulkLetterExport',`Exported ${ids.length} letters`);
 }
 
 // ═══════════════════════════════════════════════════════════
