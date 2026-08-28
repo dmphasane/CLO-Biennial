@@ -10,8 +10,9 @@
     "initdb": "node initdb.js"
   },
   "engines": {
-    "node": ">=18"
+    "node": "20.x"
   },
+  "license": "MIT",
   "dependencies": {
     "bcryptjs": "^2.4.3",
     "cloudinary": "^2.5.1",
