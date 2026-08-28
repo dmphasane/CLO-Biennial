@@ -22,12 +22,20 @@ This turns the browser-only tool into a secure, multi-user, cloud-hosted applica
 
 ---
 
-## STEP 2 — Create the PostgreSQL database on Render
+## STEP 2 — Create the PostgreSQL database on Supabase (free, persistent)
 
-1. Render Dashboard → **New** → **PostgreSQL**
-2. Name: `nedlo-stokvel-db`, Region: closest to South Africa (e.g. Frankfurt), Plan: Free
-3. Click **Create Database**
-4. Once ready, copy the **Internal Database URL** (you'll use it for DATABASE_URL)
+Render's free Postgres expires after 30 days, so we use Supabase instead (free, does not expire).
+
+1. Go to **supabase.com** → sign up / log in
+2. **New Project** → Name: `nedlo-stokvel`, set a strong **Database Password** (save it!), Region: closest available
+3. Wait ~2 min for provisioning
+4. Go to **Project Settings → Database → Connection String → URI**
+5. Choose the **Session pooler** connection (port 5432). It looks like:
+   `postgresql://postgres.xxxx:[YOUR-PASSWORD]@aws-0-region.pooler.supabase.com:5432/postgres`
+6. Replace `[YOUR-PASSWORD]` with the database password you set
+7. This full string is your `DATABASE_URL` for Render
+
+Note: Supabase free projects pause after 7 days of inactivity but resume instantly on the next request. The app includes a keep-alive ping to help prevent this during the savings period.
 
 ---
 

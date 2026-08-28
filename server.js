@@ -185,6 +185,15 @@ function rowToEntry(r){
     resolvedBy:r.resolved_by, resolvedAt:r.resolved_at };
 }
 
-app.get('/api/health', (req,res)=>res.json({ ok:true, time:new Date().toISOString() }));
+app.get('/api/health', async (req,res)=>{
+  try{ await query('SELECT 1'); res.json({ ok:true, db:'connected', time:new Date().toISOString() }); }
+  catch(e){ res.status(500).json({ ok:false, db:'error', error:e.message }); }
+});
 
 app.listen(PORT, ()=>console.log(`NEDLO server running on port ${PORT}`));
+
+// ─── Keep-alive: ping the DB every 5 days to prevent Supabase auto-pause ───
+setInterval(async ()=>{
+  try{ await query('SELECT 1'); console.log('DB keep-alive ping OK'); }
+  catch(e){ console.error('Keep-alive ping failed:', e.message); }
+}, 5 * 24 * 60 * 60 * 1000); // every 5 days

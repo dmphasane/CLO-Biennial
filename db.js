@@ -4,10 +4,18 @@ dotenv.config();
 
 const { Pool } = pg;
 
-// Render Postgres requires SSL in production
+// Works with Supabase, Render, Neon — all require SSL.
+// Supabase: use the "Session pooler" or "Transaction pooler" connection string.
 export const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+  ssl: { rejectUnauthorized: false },
+  max: 10,
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 10000,
+});
+
+pool.on('error', (err) => {
+  console.error('Unexpected DB pool error:', err.message);
 });
 
 export async function query(text, params) {
