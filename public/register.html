@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
+<title>NEDLO Biennial 2027 – Stokvel Registration</title>
+<style>
+:root{--primary:#1a3a6b;--primary-light:#2456a4;--accent:#c8a951;--success:#16a34a;--danger:#dc2626;--bg:#f0f4f8;--surface:#fff;--border:#d1d5db;--text:#1f2937;--muted:#6b7280;}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:'Segoe UI',Arial,sans-serif;background:var(--bg);color:var(--text);font-size:14px;min-height:100vh;}
+.container{max-width:640px;margin:0 auto;padding:20px 16px;}
+.header{text-align:center;margin-bottom:24px;padding:20px;background:var(--primary);border-radius:12px;color:#fff;}
+.header img{width:80px;height:80px;border-radius:50%;margin-bottom:10px;}
+.header h1{font-size:18px;margin-bottom:4px;}
+.header p{font-size:12px;opacity:.8;line-height:1.4;}
+.card{background:var(--surface);border-radius:10px;box-shadow:0 1px 4px rgba(0,0,0,.08);padding:20px;margin-bottom:16px;}
+.card-title{font-size:15px;font-weight:700;color:var(--primary);margin-bottom:14px;}
+.form-group{margin-bottom:14px;}
+label{display:block;font-size:12px;font-weight:600;color:var(--muted);margin-bottom:4px;text-transform:uppercase;letter-spacing:.4px;}
+input,select{width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:8px;font-size:14px;background:#fff;-webkit-appearance:none;}
+input:focus,select:focus{outline:none;border-color:var(--primary);box-shadow:0 0 0 3px rgba(26,58,107,.1);}
+.row{display:flex;gap:12px;flex-wrap:wrap;}
+.col-half{flex:1;min-width:200px;}
+.btn{display:block;width:100%;padding:14px;border-radius:8px;border:none;cursor:pointer;font-size:15px;font-weight:700;transition:.15s;}
+.btn-primary{background:var(--primary);color:#fff;} .btn-primary:hover{background:var(--primary-light);}
+.btn-success{background:var(--success);color:#fff;}
+.btn-outline{background:#fff;color:var(--primary);border:2px solid var(--primary);}
+.alert{padding:12px 14px;border-radius:8px;margin-bottom:14px;font-size:13px;}
+.alert-info{background:#e0f2fe;color:#075985;border:1px solid #bae6fd;}
+.alert-success{background:#f0fdf4;color:#14532d;border:1px solid #bbf7d0;}
+.alert-error{background:#fef2f2;color:#991b1b;border:1px solid #fecaca;}
+.summary-box{background:#eff6ff;border-left:4px solid var(--primary);padding:14px;border-radius:6px;margin-bottom:14px;}
+.summary-box table{width:100%;font-size:13px;}
+.summary-box td{padding:4px 0;}
+.summary-box .val{font-weight:700;text-align:right;}
+.bank-box{background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:14px;margin-top:14px;}
+.bank-box table{width:100%;font-size:13px;}
+.bank-box td{padding:3px 0;}
+.bank-box .lbl{color:var(--muted);width:140px;}
+.bank-box .ref{font-size:16px;font-weight:800;color:var(--primary);letter-spacing:1px;}
+.option-card{border:2px solid var(--border);border-radius:8px;padding:12px;margin-bottom:8px;cursor:pointer;transition:.2s;}
+.option-card:hover{border-color:var(--primary-light);background:#f8fafc;}
+.option-card.selected{border-color:var(--primary);background:#eff6ff;box-shadow:0 0 0 3px rgba(26,58,107,.15);}
+.option-card .hotel{font-weight:700;color:var(--primary);font-size:14px;}
+.option-card .type{font-size:12px;color:var(--muted);}
+.option-card .price{font-weight:800;color:var(--primary);font-size:16px;float:right;margin-top:-20px;}
+.hidden{display:none;}
+footer{text-align:center;padding:20px;font-size:11px;color:var(--muted);}
+@media(max-width:480px){.col-half{min-width:100%;}.container{padding:12px 10px;}}
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <img src="logo.png" alt="Logo" onerror="this.style.display='none'"/>
+    <h1>NEDLO Biennial 2027</h1>
+    <p>40th Lay Biennial Convention Stokvel Fund Registration<br/>
+    8–11 August 2027 | Sandton, South Africa<br/>
+    <em>Under the African Sky – Reviving Exceedingly, Abundantly</em></p>
+  </div>
+
+  <div id="reg-form">
+    <div class="card">
+      <div class="card-title">Personal Details</div>
+      <div class="form-group"><label>Full Name (as it will appear on registration) *</label>
+        <input id="r-name" placeholder="e.g. Dumisani Mphasane" required/></div>
+      <div class="row">
+        <div class="col-half"><div class="form-group"><label>Conference *</label>
+          <select id="r-conf">
+            <option value="">Select Conference…</option>
+            <option>ECLO</option><option>NCLO</option><option>WCLO</option>
+            <option>OCLO</option><option>MMMCLO</option>
+          </select></div></div>
+        <div class="col-half"><div class="form-group"><label>Local Church</label>
+          <input id="r-church" placeholder="e.g. Sandton AME"/></div></div>
+      </div>
+      <div class="row">
+        <div class="col-half"><div class="form-group"><label>Email Address *</label>
+          <input id="r-email" type="email" placeholder="your@email.com"/></div></div>
+        <div class="col-half"><div class="form-group"><label>Contact Number *</label>
+          <input id="r-phone" type="tel" placeholder="082 000 0000"/></div></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Select Accommodation Option</div>
+      <div class="alert alert-info">Each option includes Biennial Registration (R475.00/month) + Accommodation. Select your preferred hotel and room type below.</div>
+      <div id="options-list"></div>
+    </div>
+
+    <div id="summary-section" class="hidden">
+      <div class="card">
+        <div class="card-title">Your Commitment Summary</div>
+        <div class="summary-box">
+          <table>
+            <tr><td>Selected Option</td><td class="val" id="s-option"></td></tr>
+            <tr><td>Hotel & Room Type</td><td class="val" id="s-hotel"></td></tr>
+            <tr><td>Biennial Registration (monthly)</td><td class="val" id="s-reg"></td></tr>
+            <tr><td>Accommodation (monthly)</td><td class="val" id="s-accom"></td></tr>
+            <tr><td style="font-weight:700;">Monthly Instalment</td><td class="val" style="font-size:16px;color:var(--primary);" id="s-total"></td></tr>
+            <tr><td>Total over 12 months</td><td class="val" id="s-total12"></td></tr>
+            <tr><td>Period</td><td class="val">June 2026 – May 2027</td></tr>
+          </table>
+        </div>
+        <div class="bank-box">
+          <div style="font-weight:700;color:var(--primary);margin-bottom:8px;">Banking Details for Payment</div>
+          <table>
+            <tr><td class="lbl">Account Name</td><td>Biennial 2027 – Lay Organization Stokvel Fund</td></tr>
+            <tr><td class="lbl">Account No.</td><td style="font-weight:700;letter-spacing:1px;">63211345582</td></tr>
+            <tr><td class="lbl">Bank</td><td>First National Bank (FNB)</td></tr>
+            <tr><td class="lbl">Branch Code</td><td>250655</td></tr>
+            <tr><td class="lbl" style="padding-top:8px;font-weight:700;color:var(--primary);">Your Reference</td><td class="ref" id="s-ref" style="padding-top:8px;"></td></tr>
+          </table>
+          <p style="margin-top:8px;font-size:11px;color:var(--muted);">Use this reference for EVERY payment to ensure correct allocation.</p>
+        </div>
+      </div>
+    </div>
+
+    <div id="reg-error" class="alert alert-error hidden"></div>
+    <button class="btn btn-primary" onclick="submitRegistration()" style="margin-bottom:12px;">Submit Registration</button>
+  </div>
+
+  <div id="reg-success" class="hidden">
+    <div class="card">
+      <div style="text-align:center;padding:20px;">
+        <div style="font-size:48px;margin-bottom:12px;">✅</div>
+        <h2 style="color:var(--primary);margin-bottom:8px;">Registration Successful!</h2>
+        <p style="color:var(--muted);margin-bottom:16px;">Your registration has been recorded. Please use the banking details below to make your first payment.</p>
+      </div>
+      <div id="success-summary"></div>
+      <div style="margin-top:16px;">
+        <button class="btn btn-outline" onclick="location.reload()" style="margin-bottom:8px;">Register Another Member</button>
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    NEDLO Biennial 2027 Stokvel Fund • 19th Episcopal District Lay Organisation<br/>
+    Protected under POPIA • Authorised use only
+  </footer>
+</div>
+
+<script>
+const OPTIONS = {
+  'OPT-1': { hotel:'Sandton Sun', type:'Not Sharing', total:2122.92, accom:1647.92, reg:475.00 },
+  'OPT-2': { hotel:'Sandton Sun', type:'Sharing',     total:1382.29, accom: 907.29, reg:475.00 },
+  'OPT-3': { hotel:'Sandton Towers', type:'Not Sharing', total:2247.92, accom:1772.92, reg:475.00 },
+  'OPT-4': { hotel:'Sandton Towers', type:'Sharing',     total:1361.29, accom: 886.29, reg:475.00 },
+  'OPT-5': { hotel:'Garden Court',   type:'Not Sharing', total:1222.92, accom: 747.92, reg:475.00 },
+  'OPT-6': { hotel:'Garden Court',   type:'Sharing',     total: 909.38, accom: 434.38, reg:475.00 },
+  'OPT-7': { hotel:'N/A', type:'Once Off Payment', total:0, accom:0, reg:0, onceOff:true, flexAmount:true },
+};
+let selectedOpt = null;
+function fmt(n){ return 'R'+Number(n).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g,','); }
+function normalize(ref){ return (ref||'').toUpperCase().replace(/\s+/g,' ').trim(); }
+
+// Render option cards
+const list = document.getElementById('options-list');
+Object.entries(OPTIONS).forEach(([key, o])=>{
+  if(o.flexAmount) return; // skip OPT-7 for now
+  const icon = o.hotel.includes('Sun')?'☀️':o.hotel.includes('Tower')?'🏢':'🌿';
+  list.innerHTML += `<div class="option-card" id="opt-${key}" onclick="selectOption('${key}')">
+    <div class="hotel">${icon} ${o.hotel}</div>
+    <div class="type">${o.type}</div>
+    <div class="price">${fmt(o.total)}/mo</div>
+    <div style="font-size:11px;color:var(--muted);margin-top:4px;">Accom: ${fmt(o.accom)} + Reg: ${fmt(o.reg)}</div>
+  </div>`;
+});
+list.innerHTML += `<div class="option-card" id="opt-OPT-7" onclick="selectOption('OPT-7')">
+  <div class="hotel">📋 Once Off / Flexible Payment</div>
+  <div class="type">Pay in full or custom arrangement</div>
+  <div class="price">Flexible</div>
+</div>`;
+
+function selectOption(key){
+  selectedOpt=key;
+  document.querySelectorAll('.option-card').forEach(c=>c.classList.remove('selected'));
+  document.getElementById('opt-'+key).classList.add('selected');
+  const o=OPTIONS[key];
+  const sec=document.getElementById('summary-section');
+  sec.classList.remove('hidden');
+  document.getElementById('s-option').textContent=key;
+  document.getElementById('s-hotel').textContent=o.flexAmount?'Flexible / TBD':`${o.hotel} – ${o.type}`;
+  document.getElementById('s-reg').textContent=o.flexAmount?'Flexible':fmt(o.reg);
+  document.getElementById('s-accom').textContent=o.flexAmount?'Flexible':fmt(o.accom);
+  document.getElementById('s-total').textContent=o.flexAmount?'Flexible':fmt(o.total);
+  document.getElementById('s-total12').textContent=o.flexAmount?'Flexible':fmt(o.total*12);
+  // Generate reference
+  const name=document.getElementById('r-name').value.trim();
+  const conf=document.getElementById('r-conf').value;
+  document.getElementById('s-ref').textContent=(conf&&name)?normalize(conf+'-'+name):'[Select conference & enter name above]';
+}
+
+// Update reference when name/conf changes
+['r-name','r-conf'].forEach(id=>{
+  document.getElementById(id).addEventListener('input',()=>{
+    if(selectedOpt) selectOption(selectedOpt);
+  });
+});
+
+async function submitRegistration(){
+  const name=document.getElementById('r-name').value.trim();
+  const conf=document.getElementById('r-conf').value;
+  const church=document.getElementById('r-church').value.trim();
+  const email=document.getElementById('r-email').value.trim();
+  const phone=document.getElementById('r-phone').value.trim();
+  const errEl=document.getElementById('reg-error');
+  errEl.classList.add('hidden');
+  // Validate
+  if(!name){errEl.textContent='Please enter your full name.';errEl.classList.remove('hidden');return;}
+  if(!conf){errEl.textContent='Please select your conference.';errEl.classList.remove('hidden');return;}
+  if(!email){errEl.textContent='Please enter your email address.';errEl.classList.remove('hidden');return;}
+  if(!phone){errEl.textContent='Please enter your contact number.';errEl.classList.remove('hidden');return;}
+  if(!selectedOpt){errEl.textContent='Please select an accommodation option.';errEl.classList.remove('hidden');return;}
+
+  const o=OPTIONS[selectedOpt];
+  const ref=normalize(conf+'-'+name);
+  const member={
+    fullName:name, conferenceCode:conf, localChurch:church,
+    email:email, phone:phone, accommodationOption:selectedOpt,
+    expectedMonthlyTotal:o.total, expectedAccom:o.accom, expectedReg:o.reg,
+    paymentRef:ref, registrationDate:new Date().toISOString().split('T')[0]
+  };
+
+  // Build member with ledger
+  const MONTHS=['2026-06','2026-07','2026-08','2026-09','2026-10','2026-11','2026-12','2027-01','2027-02','2027-03','2027-04','2027-05'];
+  member.id='ID-'+Math.random().toString(36).substr(2,9).toUpperCase();
+  member.ledger={};
+  MONTHS.forEach(mk=>{member.ledger[mk]={status:'NOT_PAID',entryId:null,received:0,accom:0,reg:0};});
+
+  // Save via API (falls back to localStorage if API unavailable)
+  const btn = document.querySelector('.btn-primary');
+  if(btn){ btn.disabled=true; btn.textContent='Submitting…'; }
+  try{
+    const res = await fetch('/api/register', {
+      method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(member)
+    });
+    if(res.status===409){
+      errEl.textContent='A registration with this reference ('+ref+') already exists. If this is an error, contact the Financial Secretary.';
+      errEl.classList.remove('hidden');
+      if(btn){ btn.disabled=false; btn.textContent='Submit Registration'; }
+      return;
+    }
+    if(!res.ok){ throw new Error('Server error'); }
+  }catch(e){
+    // Fallback: save to localStorage so nothing is lost
+    let DB;
+    try{ DB=JSON.parse(localStorage.getItem('nedlo_db'))||{members:[],entries:[],auditLog:[],refAliases:{}}; }
+    catch(_){ DB={members:[],entries:[],auditLog:[],refAliases:{}}; }
+    if(!DB.members.find(m=>m.paymentRef===ref)){ DB.members.push(member); localStorage.setItem('nedlo_db',JSON.stringify(DB)); }
+  }
+
+  // Also send email to Financial Secretary
+  sendRegistrationEmail(member);
+
+  // Show success
+  document.getElementById('reg-form').classList.add('hidden');
+  document.getElementById('reg-success').classList.remove('hidden');
+  document.getElementById('success-summary').innerHTML=`
+    <div class="summary-box">
+      <table>
+        <tr><td>Name</td><td class="val">${name}</td></tr>
+        <tr><td>Conference</td><td class="val">${conf}</td></tr>
+        <tr><td>Option</td><td class="val">${selectedOpt} – ${o.flexAmount?'Flexible':o.hotel+' ('+o.type+')'}</td></tr>
+        <tr><td>Monthly Payment</td><td class="val">${o.flexAmount?'Flexible':fmt(o.total)}</td></tr>
+        <tr><td>Payment Reference</td><td class="val" style="color:var(--primary);font-size:15px;">${ref}</td></tr>
+      </table>
+    </div>
+    <div class="bank-box">
+      <div style="font-weight:700;color:var(--primary);margin-bottom:8px;">Banking Details</div>
+      <table>
+        <tr><td class="lbl">Account Name</td><td>Biennial 2027 – Lay Organization Stokvel Fund</td></tr>
+        <tr><td class="lbl">Account No.</td><td style="font-weight:700;">63211345582</td></tr>
+        <tr><td class="lbl">Bank</td><td>First National Bank (FNB)</td></tr>
+        <tr><td class="lbl">Branch Code</td><td>250655</td></tr>
+        <tr><td class="lbl">Your Reference</td><td style="font-weight:800;color:var(--primary);font-size:15px;">${ref}</td></tr>
+      </table>
+    </div>`;
+}
+
+function sendRegistrationEmail(member){
+  const o=OPTIONS[member.accommodationOption];
+  const subject=encodeURIComponent('NEDLO Stokvel Registration – '+member.fullName);
+  const body=encodeURIComponent(
+    'NEW REGISTRATION\n\n'+
+    'Name: '+member.fullName+'\n'+
+    'Conference: '+member.conferenceCode+'\n'+
+    'Church: '+(member.localChurch||'—')+'\n'+
+    'Email: '+member.email+'\n'+
+    'Phone: '+member.phone+'\n'+
+    'Option: '+member.accommodationOption+(o.flexAmount?' (Flexible)':' – '+o.hotel+' '+o.type)+'\n'+
+    'Monthly: '+(o.flexAmount?'Flexible':fmt(o.total))+'\n'+
+    'Reference: '+member.paymentRef+'\n'+
+    'Date: '+member.registrationDate+'\n'
+  );
+  // Open mailto silently (if it fails, registration is still saved locally)
+  try{ window.open('mailto:financial.secretary@nedlo.org.za?subject='+subject+'&body='+body,'_blank'); } catch(e){}
+}
+</script>
+</body>
+</html>
