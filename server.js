@@ -5,15 +5,19 @@ import bcrypt from 'bcryptjs';
 import rateLimit from 'express-rate-limit';
 import { v2 as cloudinary } from 'cloudinary';
 import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
 import { pool, query } from './db.js';
 
 dotenv.config();
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
 // ─── Auto-initialise database on startup (schema + seed users) ───
 async function autoInitDb(){
   try{
-    const schema = fs.readFileSync('./schema.sql', 'utf8');
+    const schema = fs.readFileSync(path.join(__dirname, 'schema.sql'), 'utf8');
     await pool.query(schema);
     const users = [
       { username:'treasurer', name:'Ms Given Phusoane', role:'Treasurer', pass: process.env.TREASURER_PASSWORD || 'Treasurer@2027' },
@@ -48,7 +52,12 @@ cloudinary.config({
 // ─── Middleware ───
 app.use(cors({ origin: process.env.FRONTEND_URL || '*', credentials: true }));
 app.use(express.json({ limit: '10mb' }));
-app.use(express.static('public')); // serves the frontend
+app.use(express.static(path.join(__dirname, 'public'))); // serves the frontend
+
+// Explicit root route → serve index.html
+app.get('/', (req, res)=>{
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
 
 // Rate limit auth endpoint
 const authLimiter = rateLimit({ windowMs: 15*60*1000, max: 20 });
