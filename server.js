@@ -4,10 +4,35 @@ import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import rateLimit from 'express-rate-limit';
 import { v2 as cloudinary } from 'cloudinary';
+import fs from 'fs';
 import dotenv from 'dotenv';
 import { pool, query } from './db.js';
 
 dotenv.config();
+
+// ─── Auto-initialise database on startup (schema + seed users) ───
+async function autoInitDb(){
+  try{
+    const schema = fs.readFileSync('./schema.sql', 'utf8');
+    await pool.query(schema);
+    const users = [
+      { username:'treasurer', name:'Ms Given Phusoane', role:'Treasurer', pass: process.env.TREASURER_PASSWORD || 'Treasurer@2027' },
+      { username:'financial_secretary', name:'Mr Dumisani Mphasane', role:'Financial Secretary', pass: process.env.FINSEC_PASSWORD || 'FinSec@2027' },
+      { username:'recording_secretary', name:'Ms Poppy Kareli', role:'Recording Secretary', pass: process.env.RECSEC_PASSWORD || 'RecSec@2027' },
+    ];
+    for(const u of users){
+      const hash = await bcrypt.hash(u.pass, 10);
+      await pool.query(
+        `INSERT INTO users (username, password_hash, full_name, role) VALUES ($1,$2,$3,$4)
+         ON CONFLICT (username) DO UPDATE SET password_hash=$2, full_name=$3, role=$4`,
+        [u.username, hash, u.name, u.role]
+      );
+    }
+    console.log('Database auto-init complete (schema + users).');
+  }catch(e){
+    console.error('DB auto-init failed:', e.message);
+  }
+}
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -190,7 +215,10 @@ app.get('/api/health', async (req,res)=>{
   catch(e){ res.status(500).json({ ok:false, db:'error', error:e.message }); }
 });
 
-app.listen(PORT, ()=>console.log(`NEDLO server running on port ${PORT}`));
+app.listen(PORT, async ()=>{
+  console.log(`NEDLO server running on port ${PORT}`);
+  await autoInitDb();
+});
 
 // ─── Keep-alive: ping the DB every 5 days to prevent Supabase auto-pause ───
 setInterval(async ()=>{
