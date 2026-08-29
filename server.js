@@ -221,7 +221,7 @@ function rowToEntry(r){
 
 app.get('/api/health', async (req,res)=>{
   try{ await query('SELECT 1'); res.json({ ok:true, db:'connected', time:new Date().toISOString() }); }
-  catch(e){ res.status(500).json({ ok:false, db:'error', error:e.message }); }
+  catch(e){ res.status(500).json({ ok:false, db:'error', error:String(e.message||e), code:e.code||'', hasDbUrl: !!process.env.DATABASE_URL }); }
 });
 
 app.listen(PORT, async ()=>{
