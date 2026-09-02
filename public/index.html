@@ -178,6 +178,10 @@ select[multiple]{height:auto;min-height:80px;}
       </div>
       <div id="dashboard-stats" class="stat-grid"></div>
       <div id="dashboard-hotel-tiles"></div>
+      <div class="card" id="dashboard-targets-card">
+        <div class="card-title">🎯 Delegate Targets by Conference</div>
+        <div id="dashboard-targets"></div>
+      </div>
       <div id="dashboard-period-alert"></div>
       <div class="card">
         <div class="card-title">Payment Compliance – Current Members</div>
@@ -648,6 +652,8 @@ const OPTIONS = {
   'OPT-7': { hotel:'N/A',            type:'Once Off Payment', total:0, accom:0, reg:0, onceOff:true, flexAmount:true },
 };
 const CONF_CODES = ['ECLO','NCLO','WCLO','OCLO','MMMCLO'];
+const CONF_NAMES = { ECLO:'East', NCLO:'Natal', WCLO:'West', OCLO:'Orangia', MMMCLO:'M M Mokone' };
+const CONF_TARGETS = { ECLO:100, NCLO:60, WCLO:100, OCLO:100, MMMCLO:120 };
 const CONTRIB_MONTHS = [
   {key:'2026-06', label:'Jun 2026'},
   {key:'2026-07', label:'Jul 2026'},
@@ -2761,6 +2767,37 @@ function renderDashboard(){
     document.getElementById('dashboard-hotel-tiles').innerHTML = '';
   }
 
+  // ── Delegate Targets by Conference ──
+  let totalTarget=0, totalReg=0;
+  let tgtHtml=`<div class="table-wrap"><table><thead><tr>
+    <th>Conference</th><th>Name</th><th class="text-right">Registered</th><th class="text-right">Target</th>
+    <th class="text-right">Variance</th><th style="min-width:160px;">Progress</th></tr></thead><tbody>`;
+  CONF_CODES.forEach(c=>{
+    const reg = DB.members.filter(m=>m.conferenceCode===c).length;
+    const tgt = CONF_TARGETS[c]||0;
+    const variance = reg - tgt;
+    const pct = tgt>0 ? Math.min(100,((reg/tgt)*100)).toFixed(0) : 0;
+    totalTarget+=tgt; totalReg+=reg;
+    tgtHtml+=`<tr>
+      <td><span class="badge" style="background:#dbeafe;color:#1e40af;">${c}</span></td>
+      <td>${CONF_NAMES[c]||''}</td>
+      <td class="text-right font-bold">${reg}</td>
+      <td class="text-right">${tgt}</td>
+      <td class="text-right" style="color:${variance>=0?'var(--success)':'var(--danger)'};font-weight:700;">${variance>=0?'+':''}${variance}</td>
+      <td><div style="display:flex;align-items:center;gap:6px;">
+        <div style="flex:1;background:#e5e7eb;border-radius:4px;height:8px;"><div style="width:${pct}%;background:${pct>=100?'var(--success)':pct>=50?'var(--warning)':'var(--danger)'};height:8px;border-radius:4px;"></div></div>
+        <span style="font-size:11px;font-weight:700;">${pct}%</span></div></td>
+    </tr>`;
+  });
+  const totVar=totalReg-totalTarget;
+  const totPct=totalTarget>0?Math.min(100,((totalReg/totalTarget)*100)).toFixed(0):0;
+  tgtHtml+=`<tr class="subtotal-row"><td colspan="2">TOTAL</td>
+    <td class="text-right">${totalReg}</td><td class="text-right">${totalTarget}</td>
+    <td class="text-right" style="color:${totVar>=0?'var(--success)':'var(--danger)'};">${totVar>=0?'+':''}${totVar}</td>
+    <td>${totPct}% of target</td></tr>`;
+  tgtHtml+=`</tbody></table></div>`;
+  document.getElementById('dashboard-targets').innerHTML = tgtHtml;
+
   // STD-001 period alert
   const now=currentMonthKey();
   const inPeriod=isInPeriod(now)||now<'2026-06'||now<='2027-05';
@@ -2865,7 +2902,8 @@ function renderConferenceBreakdown(){
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
         <div>
           <span class="badge" style="background:#dbeafe;color:#1e40af;font-size:13px;padding:4px 10px;">${conf}</span>
-          <strong style="margin-left:8px;font-size:15px;">${members.length} Registered</strong>
+          <span style="margin-left:6px;font-size:12px;color:var(--muted);">${CONF_NAMES[conf]||''}</span>
+          <strong style="margin-left:8px;font-size:15px;">${members.length} / ${CONF_TARGETS[conf]||0} Registered</strong>
           <span style="margin-left:12px;font-size:12px;color:var(--success);font-weight:600;">✓ ${membersEverPaid} paid</span>
           <span style="margin-left:8px;font-size:12px;color:var(--danger);font-weight:600;">✗ ${membersNeverPaid} no payment yet</span>
         </div>
