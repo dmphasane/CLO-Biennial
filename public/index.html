@@ -210,6 +210,7 @@ select[multiple]{height:auto;min-height:80px;}
               <option value="">All Conferences</option>
               <option>ECLO</option><option>NCLO</option><option>WCLO</option>
               <option>OCLO</option><option>MMMCLO</option>
+              <option value="__UNASSIGNED__">⚠ Unassigned / Unrecognized</option>
             </select>
           </div>
           <div class="form-group"><label>Search</label>
@@ -1231,7 +1232,8 @@ function renderMembersTable(){
   const conf = document.getElementById('member-filter-conf')?.value||'';
   const search = (document.getElementById('member-search')?.value||'').toLowerCase();
   let members = DB.members.filter(m=>{
-    if(conf && m.conferenceCode!==conf) return false;
+    if(conf==='__UNASSIGNED__'){ if(CONF_CODES.includes(m.conferenceCode)) return false; }
+    else if(conf && m.conferenceCode!==conf) return false;
     if(search && !m.fullName.toLowerCase().includes(search) && !m.paymentRef.toLowerCase().includes(search)) return false;
     return true;
   });
@@ -2789,13 +2791,29 @@ function renderDashboard(){
         <span style="font-size:11px;font-weight:700;">${pct}%</span></div></td>
     </tr>`;
   });
+  // Capture members with unrecognized/blank conference codes
+  const unassigned = DB.members.filter(m=>!CONF_CODES.includes(m.conferenceCode));
+  if(unassigned.length>0){
+    totalReg += unassigned.length;
+    tgtHtml+=`<tr style="background:#fef3c7;">
+      <td><span class="badge" style="background:#fde68a;color:#92400e;">?</span></td>
+      <td>Unassigned / Unrecognized Conference</td>
+      <td class="text-right font-bold" style="color:var(--danger);">${unassigned.length}</td>
+      <td class="text-right">—</td>
+      <td class="text-right" style="color:var(--danger);">needs review</td>
+      <td style="font-size:11px;">${[...new Set(unassigned.map(m=>'"'+(m.conferenceCode||'blank')+'"'))].join(', ')}</td>
+    </tr>`;
+  }
   const totVar=totalReg-totalTarget;
   const totPct=totalTarget>0?Math.min(100,((totalReg/totalTarget)*100)).toFixed(0):0;
-  tgtHtml+=`<tr class="subtotal-row"><td colspan="2">TOTAL</td>
+  tgtHtml+=`<tr class="subtotal-row"><td colspan="2">TOTAL (all ${DB.members.length} members)</td>
     <td class="text-right">${totalReg}</td><td class="text-right">${totalTarget}</td>
     <td class="text-right" style="color:${totVar>=0?'var(--success)':'var(--danger)'};">${totVar>=0?'+':''}${totVar}</td>
     <td>${totPct}% of target</td></tr>`;
   tgtHtml+=`</tbody></table></div>`;
+  if(unassigned.length>0){
+    tgtHtml+=`<div class="alert alert-warn mt-2" style="font-size:12px;">⚠️ ${unassigned.length} member(s) have an unrecognized or blank conference code and are not counted in any conference. Edit these members to assign a valid conference (ECLO, NCLO, WCLO, OCLO, MMMCLO).</div>`;
+  }
   document.getElementById('dashboard-targets').innerHTML = tgtHtml;
 
   // STD-001 period alert
