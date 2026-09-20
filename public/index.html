@@ -3894,22 +3894,103 @@ function quickSendEmail(memberId){
   const totalExpected12 = isFlexAmount ? 0 : m.expectedMonthlyTotal * 12;
   const outstanding = Math.max(0, totalExpected12 - totalPaid);
   const subject = encodeURIComponent(`NEDLO Biennial 2027 Stokvel Fund – Contribution Statement for ${m.fullName}`);
+  const fromEmail = 'nedloregistration@gmail.com';
+  // Build the FULL statement as plain-text in the email body (mailto cannot attach files)
+  const body = encodeURIComponent(buildPlainTextStatement(m));
+  window.open(`mailto:${m.email}?cc=${fromEmail}&subject=${subject}&body=${body}`);
+  auditLog('EmailSent',`Sent email to ${m.fullName} (${m.email})`);
+}
+
+// Build a full plain-text version of the contribution statement for email bodies
+function buildPlainTextStatement(m){
+  const elapsed = elapsedMonths();
+  const opt = OPTIONS[m.accommodationOption]||{};
+  const isFlexAmount = opt.flexAmount;
+  const totalExpected12 = isFlexAmount ? 0 : m.expectedMonthlyTotal * 12;
+  const totalReg12 = isFlexAmount ? 0 : m.expectedReg * 12;
+  const totalAccom12 = isFlexAmount ? 0 : m.expectedAccom * 12;
   const deadline = document.getElementById('comms-deadline')?.value||'31 May 2027';
   const finsecName = document.getElementById('comms-finsec-name')?.value||'Mr Dumisani Mphasane';
   const fromEmail = 'nedloregistration@gmail.com';
-  const body = encodeURIComponent(
-    `Dear ${m.fullName.split(' ').pop()},\n\n`+
-    `Please find attached your NEDLO Biennial 2027 Stokvel Fund contribution statement.\n\n`+
-    `SUMMARY:\n`+
-    `• Option: ${m.accommodationOption}${OPTIONS[m.accommodationOption]?.hotel&&OPTIONS[m.accommodationOption]?.hotel!=='N/A'?' – '+OPTIONS[m.accommodationOption]?.hotel+' ('+OPTIONS[m.accommodationOption]?.type+')':''}\n`+
-    `• Total Received to Date: ${fmt(totalPaid)}\n`+
-    `• Balance Outstanding: ${isFlexAmount?'Flexible':fmt(outstanding)}\n`+
-    `• Payment Deadline: ${deadline}\n\n`+
-    `Please contact us at ${fromEmail} if you have any queries.\n\n`+
-    `Yours in service,\n${finsecName}\nFinancial Secretary, NEDLO\n${fromEmail}`
-  );
-  window.open(`mailto:${m.email}?cc=${fromEmail}&subject=${subject}&body=${body}`);
-  auditLog('EmailSent',`Sent email to ${m.fullName} (${m.email})`);
+  const surname = m.fullName.trim().split(' ').pop();
+
+  const entries = DB.entries.filter(e=>e.linkedMemberId===m.id && e.matchStatus==='MATCHED').sort((a,b)=>a.txnDate.localeCompare(b.txnDate));
+  const uniqueEntries = [...new Map(entries.map(e=>[e.id,e])).values()];
+  const actualPaid = uniqueEntries.reduce((s,e)=>s+e.creditAmount,0);
+  const outstanding = Math.max(0, totalExpected12 - actualPaid);
+  const isFullyPaid = !isFlexAmount && outstanding<=0.05;
+  const monthsCovered = (!isFlexAmount && m.expectedMonthlyTotal>0) ? Math.floor(actualPaid/m.expectedMonthlyTotal) : 0;
+
+  let lines = [];
+  lines.push('NEDLO BIENNIAL 2027 STOKVEL FUND');
+  lines.push('CONFIRMATION OF CONTRIBUTIONS RECEIVED');
+  lines.push('19th Episcopal District Lay Organisation, AME Church');
+  lines.push('========================================');
+  lines.push('');
+  lines.push('Date: '+new Date().toLocaleDateString('en-ZA',{day:'2-digit',month:'long',year:'numeric'}));
+  lines.push('To: '+m.fullName+'  |  Conference: '+m.conferenceCode);
+  lines.push('Email: '+(m.email||'-')+'  |  Cell: '+(m.phone||'-'));
+  lines.push('');
+  lines.push('Dear '+surname+',');
+  lines.push('');
+  lines.push('This letter confirms the status of your contributions to the NEDLO Biennial 2027 Stokvel Fund.');
+  lines.push('');
+  if(isFullyPaid){
+    lines.push('*** STATUS: FULLY PAID - Thank you! Your accommodation and registration are confirmed. ***');
+  } else if(!isFlexAmount){
+    lines.push('*** OUTSTANDING BALANCE: '+fmt(outstanding)+' - please settle by '+deadline+'. ***');
+  }
+  lines.push('');
+  lines.push('1. SELECTED OPTION');
+  lines.push('   Option: '+m.accommodationOption+(opt.hotel&&opt.hotel!=='N/A'?' - '+opt.hotel+' ('+opt.type+')':' - Once Off / Flexible'));
+  lines.push('   Biennial Registration: '+(isFlexAmount?'Flexible':fmt(m.expectedReg)+'/mo ('+fmt(totalReg12)+' total)'));
+  lines.push('   Accommodation: '+(isFlexAmount?'Flexible':fmt(m.expectedAccom)+'/mo ('+fmt(totalAccom12)+' total)'));
+  lines.push('   Monthly Instalment: '+(isFlexAmount?'Flexible':fmt(m.expectedMonthlyTotal)));
+  lines.push('   Total (12 months): '+(isFlexAmount?'Flexible':fmt(totalExpected12)));
+  lines.push('');
+  lines.push('2. PAYMENTS RECEIVED');
+  if(uniqueEntries.length){
+    uniqueEntries.forEach(e=>{
+      const covered = CONTRIB_MONTHS.filter(mo=>m.ledger?.[mo.key]?.entryId===e.id).map(mo=>mo.label);
+      lines.push('   '+e.txnDate+'  '+fmt(e.creditAmount)+'  ['+e.referenceRaw+']'+(covered.length?'  covers: '+covered.join(', '):''));
+    });
+  } else {
+    lines.push('   No payments received yet.');
+  }
+  lines.push('   ----------------------------------------');
+  lines.push('   TOTAL RECEIVED: '+fmt(actualPaid)+' ('+uniqueEntries.length+' payment(s))');
+  lines.push('');
+  lines.push('3. PAYMENT SCHEDULE (Jun 2026 - May 2027)');
+  CONTRIB_MONTHS.forEach((mo, idx)=>{
+    let status;
+    if(!isFlexAmount && idx < monthsCovered) status='RECEIVED';
+    else if(elapsed.some(e=>e.key===mo.key)) status='OUTSTANDING';
+    else status='Not yet due';
+    lines.push('   '+mo.label.padEnd(10)+' '+(isFlexAmount?'':fmt(m.expectedMonthlyTotal))+'   '+status);
+  });
+  lines.push('');
+  lines.push('4. BALANCE SUMMARY');
+  lines.push('   Total Due (Full Option): '+(isFlexAmount?'Flexible':fmt(totalExpected12)));
+  lines.push('   Total Received to Date:  '+fmt(actualPaid));
+  lines.push('   Balance Outstanding:     '+(isFullyPaid?'NIL - FULLY PAID':fmt(outstanding)));
+  lines.push('');
+  if(!isFullyPaid){
+    lines.push('Please note: due date for Biennial Registration is 31 December 2026 (required to register members with CLO).');
+    lines.push('Should the balance not be settled by '+deadline+', your accommodation allocation may be affected.');
+    lines.push('');
+    lines.push('BANKING DETAILS:');
+    lines.push('   Account Name: Biennial 2027 - Lay Organization Stokvel Fund');
+    lines.push('   Account No:   63211345582');
+    lines.push('   Bank:         First National Bank (FNB)');
+    lines.push('   Branch Code:  250655');
+    lines.push('   Your Reference: '+m.paymentRef);
+    lines.push('');
+  }
+  lines.push('Yours in service,');
+  lines.push(finsecName);
+  lines.push('Financial Secretary, NEDLO');
+  lines.push(fromEmail);
+  return lines.join('\n');
 }
 
 function bulkSendEmails(){
