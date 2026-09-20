@@ -251,6 +251,7 @@ select[multiple]{height:auto;min-height:80px;}
           <button class="btn btn-danger btn-sm" onclick="clearAllEntries()">🗑 Clear All Entries</button>
           <button class="btn btn-primary btn-sm" onclick="rerunMatching()">🔄 Re-run Matching</button>
           <button class="btn btn-warning btn-sm" onclick="recalcAllLedgers()">📊 Recalc All Ledgers</button>
+          <button class="btn btn-warning btn-sm" onclick="findDuplicates()">🔍 Find Duplicates</button>
           <button class="btn btn-danger btn-sm" onclick="fullReset()">⚠️ Full Reset</button>
         </div>
         <div class="filter-bar">
@@ -554,6 +555,17 @@ select[multiple]{height:auto;min-height:80px;}
       <button class="btn btn-outline" onclick="closeMemberModal()">Cancel</button>
       <button class="btn btn-primary" onclick="saveMember()">Save Member</button>
     </div>
+  </div>
+</div>
+
+<!-- ════ DUPLICATE FINDER MODAL ════ -->
+<div id="dup-finder-modal" class="modal-backdrop" style="display:none">
+  <div class="modal" style="width:840px;max-width:98vw;">
+    <div class="flex justify-between items-center" style="margin-bottom:14px;">
+      <div class="modal-title" style="margin-bottom:0;">🔍 Duplicate Payment Finder</div>
+      <button class="btn btn-outline btn-sm" onclick="document.getElementById('dup-finder-modal').style.display='none'">✕ Close</button>
+    </div>
+    <div id="dup-finder-body"></div>
   </div>
 </div>
 
@@ -2386,6 +2398,119 @@ function recalcAllLedgers(){
   saveDB(); renderAll();
   auditLog('RecalcAllLedgers',`Recalculated ledgers for ${count} members with current rates`);
   alert(`Recalculated ${count} member ledgers. All allocations now use current rates.`);
+}
+
+// ── Find likely duplicate bank entries ──
+function findDuplicates(){
+  const groups = {};
+  DB.entries.forEach(e=>{
+    const key = e.creditAmount.toFixed(2);
+    if(!groups[key]) groups[key]=[];
+    groups[key].push(e);
+  });
+  const dupSets = [];
+  Object.values(groups).forEach(list=>{
+    if(list.length<2) return;
+    const seen = new Set();
+    for(let i=0;i<list.length;i++){
+      if(seen.has(list[i].id)) continue;
+      const cluster=[list[i]];
+      for(let j=i+1;j<list.length;j++){
+        if(seen.has(list[j].id)) continue;
+        const a=list[i], b=list[j];
+        const sameDate = a.txnDate && a.txnDate===b.txnDate;
+        const sameRef = a.referenceNorm && a.referenceNorm===b.referenceNorm;
+        const sameMember = a.linkedMemberId && a.linkedMemberId===b.linkedMemberId;
+        if(sameDate || sameRef || sameMember){ cluster.push(b); seen.add(b.id); }
+      }
+      if(cluster.length>1){ cluster.forEach(c=>seen.add(c.id)); dupSets.push(cluster); }
+    }
+  });
+  const body = document.getElementById('dup-finder-body');
+  if(!dupSets.length){
+    body.innerHTML='<p style="padding:16px;color:var(--success);">✅ No likely duplicate entries found.</p>';
+    document.getElementById('dup-finder-modal').style.display='flex';
+    return;
+  }
+  const totalDupAmount = dupSets.reduce((s,set)=>s + set.slice(1).reduce((ss,e)=>ss+e.creditAmount,0), 0);
+  let html = `<div class="alert alert-warn">Found <strong>${dupSets.length}</strong> group(s) of likely duplicates. 
+    Potential over-count: <strong>${fmt(totalDupAmount)}</strong>. Review each group — keep one, remove extras.</div>`;
+  html += `<div style="max-height:420px;overflow-y:auto;">`;
+  dupSets.forEach((set,idx)=>{
+    html += `<div style="border:1px solid var(--border);border-radius:8px;padding:10px;margin-bottom:10px;">
+      <div style="font-weight:700;color:var(--primary);margin-bottom:6px;">Group ${idx+1}: ${set.length} entries of ${fmt(set[0].creditAmount)}</div>
+      <table style="width:100%;font-size:12px;"><thead><tr>
+        <th>Keep?</th><th>Date</th><th>Reference</th><th>Description</th><th>Month</th><th>Member</th><th>Action</th>
+      </tr></thead><tbody>`;
+    set.forEach((e,i)=>{
+      const m = e.linkedMemberId?DB.members.find(x=>x.id===e.linkedMemberId):null;
+      html += `<tr style="background:${i===0?'#f0fdf4':'#fef2f2'};">
+        <td>${i===0?'<span class="badge badge-paid">KEEP</span>':'<span class="badge badge-notpaid">DUPLICATE</span>'}</td>
+        <td>${e.txnDate}</td>
+        <td style="font-size:11px;">${e.referenceRaw}</td>
+        <td style="font-size:11px;">${e.description||'—'}</td>
+        <td>${monthLabel(e.contribMonth)||e.contribMonth}</td>
+        <td>${m?m.fullName:'—'}</td>
+        <td>${i===0?'—':`<button class="btn btn-danger btn-sm" onclick="removeDuplicateEntry('${e.id}')">🗑 Remove</button>`}</td>
+      </tr>`;
+    });
+    html += `</tbody></table></div>`;
+  });
+  html += `</div>`;
+  html += `<div class="modal-footer"><button class="btn btn-warning" onclick="removeAllDuplicates()">🗑 Remove ALL flagged duplicates</button></div>`;
+  window._dupSets = dupSets;
+  body.innerHTML = html;
+  document.getElementById('dup-finder-modal').style.display='flex';
+}
+function removeDuplicateEntry(entryId){
+  const entry = DB.entries.find(e=>e.id===entryId);
+  if(!entry) return;
+  if(!confirm('Remove this duplicate entry of '+fmt(entry.creditAmount)+'?')) return;
+  DB.entries = DB.entries.filter(e=>e.id!==entryId);
+  auditLog('DuplicateRemoved',`Removed duplicate ${entry.referenceRaw} ${fmt(entry.creditAmount)} (${entry.txnDate})`);
+  recalcLedgerForMember(entry.linkedMemberId);
+  saveDB(); renderAll();
+  findDuplicates();
+}
+function removeAllDuplicates(){
+  const dupSets = window._dupSets||[];
+  const toRemove = [];
+  dupSets.forEach(set=>{ set.slice(1).forEach(e=>toRemove.push(e.id)); });
+  if(!toRemove.length){ alert('Nothing to remove.'); return; }
+  if(!confirm(`Remove ${toRemove.length} duplicate entries? Ledgers will be recalculated.`)) return;
+  const affectedMembers = new Set();
+  toRemove.forEach(id=>{ const e=DB.entries.find(x=>x.id===id); if(e?.linkedMemberId) affectedMembers.add(e.linkedMemberId); });
+  DB.entries = DB.entries.filter(e=>!toRemove.includes(e.id));
+  auditLog('DuplicatesRemovedBulk',`Removed ${toRemove.length} duplicate entries`);
+  affectedMembers.forEach(mid=>recalcLedgerForMember(mid));
+  saveDB(); renderAll();
+  document.getElementById('dup-finder-modal').style.display='none';
+  alert(`Removed ${toRemove.length} duplicate entries.`);
+}
+function recalcLedgerForMember(memberId){
+  const m = DB.members.find(x=>x.id===memberId); if(!m) return;
+  const o = OPTIONS[m.accommodationOption]; if(!o) return;
+  const isFlexAmount = o.flexAmount;
+  const expected = m.expectedMonthlyTotal;
+  m.ledger={};
+  CONTRIB_MONTHS.forEach(mk=>{ m.ledger[mk.key]={status:'NOT_PAID',entryId:null,received:0,accom:0,reg:0}; });
+  const entries = DB.entries.filter(e=>e.linkedMemberId===m.id && e.matchStatus==='MATCHED').sort((a,b)=>a.txnDate.localeCompare(b.txnDate));
+  const totalPaid = entries.reduce((s,e)=>s+e.creditAmount,0);
+  if(isFlexAmount || expected<=0){
+    if(totalPaid>0 && entries.length){
+      m.ledger['2026-06'].status='PAID'; m.ledger['2026-06'].entryId=entries[0].id;
+      m.ledger['2026-06'].received=totalPaid; m.ledger['2026-06'].reg=totalPaid;
+    }
+    return;
+  }
+  const monthsCovered = Math.floor(totalPaid/expected);
+  let running=0; const monthEntry={};
+  entries.forEach(e=>{ running+=e.creditAmount; const mc=Math.floor(running/expected); for(let j=0;j<CONTRIB_MONTHS.length&&j<mc;j++){ if(!monthEntry[CONTRIB_MONTHS[j].key]) monthEntry[CONTRIB_MONTHS[j].key]=e; } });
+  for(let j=0;j<CONTRIB_MONTHS.length&&j<monthsCovered;j++){
+    const mk=CONTRIB_MONTHS[j].key;
+    m.ledger[mk].status='PAID'; m.ledger[mk].entryId=(monthEntry[mk]||entries[entries.length-1])?.id||null;
+    m.ledger[mk].received=expected; m.ledger[mk].accom=m.expectedAccom; m.ledger[mk].reg=m.expectedReg;
+  }
 }
 
 function renderEntriesTable(){
