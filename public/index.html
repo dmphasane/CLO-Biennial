@@ -2400,31 +2400,23 @@ function recalcAllLedgers(){
   alert(`Recalculated ${count} member ledgers. All allocations now use current rates.`);
 }
 
-// ── Find likely duplicate bank entries ──
+// ── Find TRUE duplicate bank entries (same transaction imported twice) ──
 function findDuplicates(){
+  // A true duplicate = identical amount AND date AND reference AND description.
   const groups = {};
   DB.entries.forEach(e=>{
-    const key = e.creditAmount.toFixed(2);
+    const key = [
+      e.creditAmount.toFixed(2),
+      (e.txnDate||'').trim(),
+      normalize(e.referenceRaw||''),
+      normalize(e.description||'')
+    ].join('||');
     if(!groups[key]) groups[key]=[];
     groups[key].push(e);
   });
   const dupSets = [];
   Object.values(groups).forEach(list=>{
-    if(list.length<2) return;
-    const seen = new Set();
-    for(let i=0;i<list.length;i++){
-      if(seen.has(list[i].id)) continue;
-      const cluster=[list[i]];
-      for(let j=i+1;j<list.length;j++){
-        if(seen.has(list[j].id)) continue;
-        const a=list[i], b=list[j];
-        const sameDate = a.txnDate && a.txnDate===b.txnDate;
-        const sameRef = a.referenceNorm && a.referenceNorm===b.referenceNorm;
-        const sameMember = a.linkedMemberId && a.linkedMemberId===b.linkedMemberId;
-        if(sameDate || sameRef || sameMember){ cluster.push(b); seen.add(b.id); }
-      }
-      if(cluster.length>1){ cluster.forEach(c=>seen.add(c.id)); dupSets.push(cluster); }
-    }
+    if(list.length>1) dupSets.push(list);
   });
   const body = document.getElementById('dup-finder-body');
   if(!dupSets.length){
@@ -2433,12 +2425,12 @@ function findDuplicates(){
     return;
   }
   const totalDupAmount = dupSets.reduce((s,set)=>s + set.slice(1).reduce((ss,e)=>ss+e.creditAmount,0), 0);
-  let html = `<div class="alert alert-warn">Found <strong>${dupSets.length}</strong> group(s) of likely duplicates. 
-    Potential over-count: <strong>${fmt(totalDupAmount)}</strong>. Review each group — keep one, remove extras.</div>`;
+  let html = `<div class="alert alert-warn">Found <strong>${dupSets.length}</strong> group(s) of <strong>identical</strong> entries (same date, reference, description AND amount — i.e. the same transaction imported more than once). 
+    Potential over-count: <strong>${fmt(totalDupAmount)}</strong>. Keep one, remove the extras.</div>`;
   html += `<div style="max-height:420px;overflow-y:auto;">`;
   dupSets.forEach((set,idx)=>{
     html += `<div style="border:1px solid var(--border);border-radius:8px;padding:10px;margin-bottom:10px;">
-      <div style="font-weight:700;color:var(--primary);margin-bottom:6px;">Group ${idx+1}: ${set.length} entries of ${fmt(set[0].creditAmount)}</div>
+      <div style="font-weight:700;color:var(--primary);margin-bottom:6px;">Group ${idx+1}: ${set.length} identical entries of ${fmt(set[0].creditAmount)} on ${set[0].txnDate}</div>
       <table style="width:100%;font-size:12px;"><thead><tr>
         <th>Keep?</th><th>Date</th><th>Reference</th><th>Description</th><th>Month</th><th>Member</th><th>Action</th>
       </tr></thead><tbody>`;
