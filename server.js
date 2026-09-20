@@ -131,12 +131,12 @@ app.post('/api/entries/bulk', authRequired, async (req, res)=>{
     for(const e of entries){
       await client.query(
         `INSERT INTO entries (id,txn_date,val_date,description,reference_raw,reference_norm,credit_amount,
-           contrib_month,match_status,linked_member_id,allocated_accom,allocated_reg,resolved_by,resolved_at)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+           contrib_month,match_status,linked_member_id,allocated_accom,allocated_reg,resolved_by,resolved_at,fingerprint)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
          ON CONFLICT (id) DO UPDATE SET match_status=$9,linked_member_id=$10,allocated_accom=$11,
-           allocated_reg=$12,resolved_by=$13,resolved_at=$14,contrib_month=$8`,
+           allocated_reg=$12,resolved_by=$13,resolved_at=$14,contrib_month=$8,fingerprint=$15`,
         [e.id,e.txnDate,e.valDate,e.description,e.referenceRaw,e.referenceNorm,e.creditAmount,
-         e.contribMonth,e.matchStatus,e.linkedMemberId,e.allocatedAccom,e.allocatedReg,e.resolvedBy,e.resolvedAt]
+         e.contribMonth,e.matchStatus,e.linkedMemberId,e.allocatedAccom,e.allocatedReg,e.resolvedBy,e.resolvedAt,e.fingerprint||null]
       );
     }
     await client.query('COMMIT');
@@ -216,7 +216,7 @@ function rowToEntry(r){
     referenceRaw:r.reference_raw, referenceNorm:r.reference_norm, creditAmount:Number(r.credit_amount),
     contribMonth:r.contrib_month, matchStatus:r.match_status, linkedMemberId:r.linked_member_id,
     allocatedAccom:Number(r.allocated_accom), allocatedReg:Number(r.allocated_reg),
-    resolvedBy:r.resolved_by, resolvedAt:r.resolved_at };
+    resolvedBy:r.resolved_by, resolvedAt:r.resolved_at, fingerprint:r.fingerprint };
 }
 
 app.get('/api/health', async (req,res)=>{

@@ -48,12 +48,15 @@ CREATE TABLE IF NOT EXISTS entries (
   allocated_reg NUMERIC(12,2) DEFAULT 0,
   resolved_by TEXT,
   resolved_at TIMESTAMPTZ,
+  fingerprint TEXT,
   created_at TIMESTAMPTZ DEFAULT now()
 );
 
 CREATE INDEX IF NOT EXISTS idx_entries_member ON entries(linked_member_id);
 CREATE INDEX IF NOT EXISTS idx_entries_status ON entries(match_status);
-CREATE INDEX IF NOT EXISTS idx_entries_dedup ON entries(txn_date, credit_amount, reference_norm);
+CREATE INDEX IF NOT EXISTS idx_entries_fp ON entries(fingerprint);
+-- Add fingerprint column if upgrading an existing database
+ALTER TABLE entries ADD COLUMN IF NOT EXISTS fingerprint TEXT;
 
 CREATE TABLE IF NOT EXISTS ref_aliases (
   ref_norm TEXT PRIMARY KEY,

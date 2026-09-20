@@ -808,6 +808,14 @@ function parseDate(str){
   if(!isNaN(d)) return d;
   return null;
 }
+function isoDate(str){
+  const d = parseDate(str);
+  if(!d) return (str||'').trim();
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+}
+function txnFingerprint(txnDate, ref, desc, amount){
+  return [ isoDate(txnDate), amount.toFixed(2), normalize(ref||''), normalize(desc||'') ].join('||');
+}
 function monthKey(dateStr){
   const d = parseDate(dateStr);
   if(!d) return null;
@@ -1827,19 +1835,18 @@ function importStatementRows(rows, filename){
     const effectiveRef = ref || desc;
     // Also try the other field as a secondary match source
     const secondaryRef = ref ? desc : '';
-    // Duplicate detection: same date + same reference + same amount = same transaction
-    // Also catch where ref/desc are slightly different but it's the same payment
-    const isDuplicate = DB.entries.find(e=>
-      e.txnDate===txnDate && e.creditAmount===credit && 
-      (e.referenceNorm===normalize(effectiveRef) || e.referenceRaw===effectiveRef ||
-       (normalize(e.description)===normalize(desc) && e.description))
-    );
+    // ── Duplicate control: stable transaction fingerprint ──
+    const fp = txnFingerprint(txnDate, effectiveRef, desc, credit);
+    const isDuplicate = DB.entries.some(e=>{
+      if(e.fingerprint) return e.fingerprint === fp;
+      return txnFingerprint(e.txnDate, e.referenceRaw, e.description, e.creditAmount) === fp;
+    });
     if(isDuplicate){ skipped++; return; }
     const entryId=uid();
     const entry={ id:entryId, txnDate, valDate, description:desc,
       referenceRaw:effectiveRef, referenceNorm:normalize(effectiveRef), creditAmount:credit,
       contribMonth:mk, matchStatus:'UNMATCHED', linkedMemberId:null,
-      allocatedAccom:0, allocatedReg:0, resolvedBy:null, resolvedAt:null };
+      allocatedAccom:0, allocatedReg:0, resolvedBy:null, resolvedAt:null, fingerprint:fp };
     DB.entries.push(entry);
     // Try matching with primary ref first
     matchEntry(entry);
