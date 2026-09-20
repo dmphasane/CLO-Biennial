@@ -178,7 +178,6 @@ select[multiple]{height:auto;min-height:80px;}
       </div>
       <div id="dashboard-stats" class="stat-grid"></div>
       <div id="dashboard-hotel-tiles"></div>
-      <div id="dashboard-credential-alert"></div>
       <div class="card" id="dashboard-targets-card">
         <div class="card-title">🎯 Delegate Targets by Conference</div>
         <div id="dashboard-targets"></div>
@@ -421,7 +420,7 @@ select[multiple]{height:auto;min-height:80px;}
             <div class="form-group"><label>Financial Secretary Name</label>
               <input id="comms-finsec-name" value="Mr Dumisani Mphasane" /></div>
             <div class="form-group"><label>Financial Secretary Email</label>
-              <input id="comms-finsec-email" value="financial.secretary@nedlo.org.za" /></div>
+              <input id="comms-finsec-email" value="nedloregistration@gmail.com" /></div>
             <div class="form-group"><label>Financial Secretary Cell</label>
               <input id="comms-finsec-cell" value="" /></div>
           </div>
@@ -2817,16 +2816,6 @@ function renderDashboard(){
   }
   document.getElementById('dashboard-targets').innerHTML = tgtHtml;
 
-  // ── Credential submission due date ──
-  const credDue = new Date('2026-09-24T23:59:59');
-  const daysLeft = Math.ceil((credDue - new Date()) / (1000*60*60*24));
-  let credColor = daysLeft<0 ? 'alert-error' : daysLeft<=14 ? 'alert-warn' : 'alert-info';
-  let credMsg = daysLeft<0
-    ? `⏰ <strong>Credential Submission deadline has PASSED</strong> (24 September 2026).`
-    : `📋 <strong>Credential Submission Due Date: 24 September 2026</strong> — ${daysLeft} day(s) remaining.`;
-  document.getElementById('dashboard-credential-alert').innerHTML =
-    `<div class="alert ${credColor}" style="font-size:14px;">${credMsg}</div>`;
-
   // STD-001 period alert
   const now=currentMonthKey();
   const inPeriod=isInPeriod(now)||now<'2026-06'||now<='2027-05';
@@ -3907,6 +3896,7 @@ function quickSendEmail(memberId){
   const subject = encodeURIComponent(`NEDLO Biennial 2027 Stokvel Fund – Contribution Statement for ${m.fullName}`);
   const deadline = document.getElementById('comms-deadline')?.value||'31 May 2027';
   const finsecName = document.getElementById('comms-finsec-name')?.value||'Mr Dumisani Mphasane';
+  const fromEmail = 'nedloregistration@gmail.com';
   const body = encodeURIComponent(
     `Dear ${m.fullName.split(' ').pop()},\n\n`+
     `Please find attached your NEDLO Biennial 2027 Stokvel Fund contribution statement.\n\n`+
@@ -3915,10 +3905,10 @@ function quickSendEmail(memberId){
     `• Total Received to Date: ${fmt(totalPaid)}\n`+
     `• Balance Outstanding: ${isFlexAmount?'Flexible':fmt(outstanding)}\n`+
     `• Payment Deadline: ${deadline}\n\n`+
-    `Please log in to the NEDLO portal or contact us if you have any queries.\n\n`+
-    `Yours in service,\n${finsecName}\nFinancial Secretary, NEDLO`
+    `Please contact us at ${fromEmail} if you have any queries.\n\n`+
+    `Yours in service,\n${finsecName}\nFinancial Secretary, NEDLO\n${fromEmail}`
   );
-  window.open(`mailto:${m.email}?subject=${subject}&body=${body}`);
+  window.open(`mailto:${m.email}?cc=${fromEmail}&subject=${subject}&body=${body}`);
   auditLog('EmailSent',`Sent email to ${m.fullName} (${m.email})`);
 }
 
