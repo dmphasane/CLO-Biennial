@@ -4008,21 +4008,19 @@ function sendLetterEmail(){
   quickSendEmail(currentLetterMemberId);
 }
 
-function quickSendEmail(memberId){
+async function quickSendEmail(memberId){
   const m = DB.members.find(x=>x.id===memberId);
   if(!m?.email){ alert('No email address on file for '+m?.fullName+'. Please update the member record first.'); return; }
-  const elapsed = elapsedMonths();
-  let totalPaid=0;
-  elapsed.forEach(mo=>{ if(m.ledger?.[mo.key]?.status==='PAID') totalPaid+=m.ledger[mo.key].received||0; });
-  const isFlexAmount = OPTIONS[m.accommodationOption]?.flexAmount;
-  const totalExpected12 = isFlexAmount ? 0 : m.expectedMonthlyTotal * 12;
-  const outstanding = Math.max(0, totalExpected12 - totalPaid);
-  const subject = encodeURIComponent(`NEDLO Biennial 2027 Stokvel Fund – Contribution Statement for ${m.fullName}`);
-  const fromEmail = 'nedloregistration@gmail.com';
-  // Build the FULL statement as plain-text in the email body (mailto cannot attach files)
-  const body = encodeURIComponent(buildPlainTextStatement(m));
-  window.open(`mailto:${m.email}?cc=${fromEmail}&subject=${subject}&body=${body}`);
-  auditLog('EmailSent',`Sent email to ${m.fullName} (${m.email})`);
+  const settings = {
+    deadline: document.getElementById('comms-deadline')?.value || '31 May 2027',
+    finsecName: document.getElementById('comms-finsec-name')?.value || 'Mr Dumisani Mphasane',
+  };
+  try{
+    await apiFetch('/api/send-statement', { method:'POST', body: JSON.stringify({ memberId, settings }) });
+    alert('✅ Statement emailed to '+m.fullName+' ('+m.email+')');
+  }catch(e){
+    alert('Failed to send email: '+e.message);
+  }
 }
 
 // Build a full plain-text version of the contribution statement for email bodies
@@ -4117,18 +4115,23 @@ function buildPlainTextStatement(m){
   return lines.join('\n');
 }
 
-function bulkSendEmails(){
+async function bulkSendEmails(){
   const checked = Array.from(document.querySelectorAll('.comms-cb:checked'));
   const ids = checked.length>0 ? checked.map(c=>c.value) : DB.members.map(m=>m.id);
   const withEmail = ids.filter(id=>DB.members.find(m=>m.id===id)?.email);
   const noEmail = ids.length - withEmail.length;
   if(!withEmail.length){ alert('No members with email addresses found.'); return; }
-  if(!confirm(`Send contribution statements to ${withEmail.length} members?${noEmail>0?' ('+noEmail+' skipped — no email)':''}`)){ return; }
-  // Open mailto for each (opens default email client)
-  withEmail.forEach((id,idx)=>{
-    setTimeout(()=>quickSendEmail(id), idx*500); // stagger by 500ms
-  });
-  auditLog('BulkEmail',`Bulk sent ${withEmail.length} contribution statement emails`);
+  if(!confirm(`Send contribution statements to ${withEmail.length} members via the server?${noEmail>0?' ('+noEmail+' skipped — no email)':''}\n\nThis may take a moment.`)){ return; }
+  const settings = {
+    deadline: document.getElementById('comms-deadline')?.value || '31 May 2027',
+    finsecName: document.getElementById('comms-finsec-name')?.value || 'Mr Dumisani Mphasane',
+  };
+  try{
+    const r = await apiFetch('/api/send-bulk', { method:'POST', body: JSON.stringify({ memberIds: withEmail, settings }) });
+    alert(`✅ Bulk send complete: ${r.sent} sent, ${r.skipped} skipped, ${r.failed} failed.`);
+  }catch(e){
+    alert('Bulk send failed: '+e.message);
+  }
 }
 
 function printLetter(){

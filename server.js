@@ -9,6 +9,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
 import { pool, query } from './db.js';
+import { makeTransport, buildStatementHTML } from './email.js';
 
 dotenv.config();
 
@@ -218,6 +219,58 @@ function rowToEntry(r){
     allocatedAccom:Number(r.allocated_accom), allocatedReg:Number(r.allocated_reg),
     resolvedBy:r.resolved_by, resolvedAt:r.resolved_at, fingerprint:r.fingerprint };
 }
+
+// ─── EMAIL: send a single member's statement ───
+app.post('/api/send-statement', authRequired, async (req, res)=>{
+  const { memberId, settings } = req.body;
+  try{
+    const mr = await query('SELECT * FROM members WHERE id=$1', [memberId]);
+    if(!mr.rows.length) return res.status(404).json({ error:'Member not found' });
+    const m = rowToMember(mr.rows[0]);
+    if(!m.email) return res.status(400).json({ error:'Member has no email address' });
+    const er = await query('SELECT * FROM entries WHERE linked_member_id=$1', [memberId]);
+    const entries = er.rows.map(rowToEntry);
+    const html = buildStatementHTML(m, entries, settings||{});
+    const transport = makeTransport();
+    await transport.sendMail({
+      from: `"NEDLO Biennial 2027" <${process.env.GMAIL_USER||'nedloregistration@gmail.com'}>`,
+      to: m.email,
+      subject: `NEDLO Biennial 2027 Stokvel Fund – Contribution Statement for ${m.fullName}`,
+      html,
+    });
+    await logAudit(req.user, 'EmailSent', `Statement emailed to ${m.fullName} (${m.email})`);
+    res.json({ ok:true });
+  }catch(e){ console.error('send-statement error:', e.message); res.status(500).json({ error:e.message }); }
+});
+
+// ─── EMAIL: bulk send to many members ───
+app.post('/api/send-bulk', authRequired, async (req, res)=>{
+  const { memberIds, settings } = req.body;
+  if(!Array.isArray(memberIds) || !memberIds.length) return res.status(400).json({ error:'No members selected' });
+  const transport = makeTransport();
+  let sent=0, skipped=0, failed=[];
+  for(const id of memberIds){
+    try{
+      const mr = await query('SELECT * FROM members WHERE id=$1', [id]);
+      if(!mr.rows.length){ skipped++; continue; }
+      const m = rowToMember(mr.rows[0]);
+      if(!m.email){ skipped++; continue; }
+      const er = await query('SELECT * FROM entries WHERE linked_member_id=$1', [id]);
+      const entries = er.rows.map(rowToEntry);
+      const html = buildStatementHTML(m, entries, settings||{});
+      await transport.sendMail({
+        from: `"NEDLO Biennial 2027" <${process.env.GMAIL_USER||'nedloregistration@gmail.com'}>`,
+        to: m.email,
+        subject: `NEDLO Biennial 2027 Stokvel Fund – Contribution Statement for ${m.fullName}`,
+        html,
+      });
+      sent++;
+      await new Promise(r=>setTimeout(r, 400)); // gentle pacing for Gmail
+    }catch(e){ failed.push(id); console.error('bulk send fail', id, e.message); }
+  }
+  await logAudit(req.user, 'BulkEmail', `Bulk emailed ${sent} statements (${skipped} skipped, ${failed.length} failed)`);
+  res.json({ ok:true, sent, skipped, failed:failed.length });
+});
 
 app.get('/api/health', async (req,res)=>{
   try{ await query('SELECT 1'); res.json({ ok:true, db:'connected', time:new Date().toISOString() }); }
