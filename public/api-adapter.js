@@ -14,8 +14,9 @@ async function apiFetch(path, options={}){
   const headers = { 'Content-Type':'application/json', ...(options.headers||{}) };
   if(AUTH_TOKEN) headers['Authorization'] = 'Bearer ' + AUTH_TOKEN;
   const res = await fetch(API_BASE + path, { ...options, headers });
-  if(res.status === 401){
-    // Token expired — force re-login
+  const isLogin = path.indexOf('/api/login') !== -1;
+  if(res.status === 401 && !isLogin){
+    // Token expired on a normal request — force re-login
     AUTH_TOKEN = null;
     sessionStorage.removeItem('nedlo_token');
     if(typeof doLogout === 'function') doLogout();
@@ -30,6 +31,9 @@ async function apiFetch(path, options={}){
 
 // ─── Override login to use the API ───
 async function apiLogin(username, password){
+  // Clear any stale token before logging in
+  AUTH_TOKEN = null;
+  sessionStorage.removeItem('nedlo_token');
   const data = await apiFetch('/api/login', {
     method:'POST',
     body: JSON.stringify({ username, password })
