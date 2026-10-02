@@ -84,13 +84,30 @@ app.post('/api/login', authLimiter, async (req, res)=>{
   const { username, password } = req.body;
   try{
     const r = await query('SELECT * FROM users WHERE username=$1', [username]);
-    if(!r.rows.length) return res.status(401).json({ error:'Invalid credentials' });
+    if(!r.rows.length) return res.status(401).json({ error:'Invalid credentials (user not found)' });
     const user = r.rows[0];
     const ok = await bcrypt.compare(password, user.password_hash);
-    if(!ok) return res.status(401).json({ error:'Invalid credentials' });
+    if(!ok) return res.status(401).json({ error:'Invalid credentials (wrong password)' });
     await logAudit(user, 'Login', 'User signed in');
     res.json({ token: signToken(user), user:{ name:user.full_name, role:user.role, username:user.username } });
-  }catch(e){ console.error(e); res.status(500).json({ error:'Server error' }); }
+  }catch(e){ console.error('LOGIN ERROR:', e); res.status(500).json({ error:'Server error: '+(e.message||e) }); }
+});
+
+// Debug: how many users are seeded (no secrets exposed)
+app.get('/api/debug/users', async (req, res)=>{
+  try{
+    const r = await query('SELECT username, full_name, role FROM users ORDER BY username');
+    res.json({ count:r.rows.length, users:r.rows });
+  }catch(e){ res.status(500).json({ error:String(e.message||e) }); }
+});
+
+// Debug: force re-seed users (safe to call; updates passwords from env vars)
+app.post('/api/debug/reseed', async (req, res)=>{
+  try{
+    await autoInitDb();
+    const r = await query('SELECT username FROM users');
+    res.json({ ok:true, userCount:r.rows.length });
+  }catch(e){ res.status(500).json({ error:String(e.message||e) }); }
 });
 
 // ─── MEMBERS ───
