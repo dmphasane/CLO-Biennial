@@ -80,15 +80,20 @@ async function logAudit(user, action, detail){
 }
 
 // ─── AUTH ───
+const TEST_MODE = String(process.env.TEST_MODE||'').toLowerCase() === 'true';
+
 app.post('/api/login', authLimiter, async (req, res)=>{
   const { username, password } = req.body;
   try{
     const r = await query('SELECT * FROM users WHERE username=$1', [username]);
     if(!r.rows.length) return res.status(401).json({ error:'Invalid credentials (user not found)' });
     const user = r.rows[0];
-    const ok = await bcrypt.compare(password, user.password_hash);
-    if(!ok) return res.status(401).json({ error:'Invalid credentials (wrong password)' });
-    await logAudit(user, 'Login', 'User signed in');
+    // TEST MODE: skip password check (set TEST_MODE=true in Render env while testing)
+    if(!TEST_MODE){
+      const ok = await bcrypt.compare(password, user.password_hash);
+      if(!ok) return res.status(401).json({ error:'Invalid credentials (wrong password)' });
+    }
+    await logAudit(user, 'Login', TEST_MODE ? 'User signed in (TEST MODE)' : 'User signed in');
     res.json({ token: signToken(user), user:{ name:user.full_name, role:user.role, username:user.username } });
   }catch(e){ console.error('LOGIN ERROR:', e); res.status(500).json({ error:'Server error: '+(e.message||e) }); }
 });
@@ -290,7 +295,7 @@ app.post('/api/send-bulk', authRequired, async (req, res)=>{
 });
 
 app.get('/api/health', async (req,res)=>{
-  try{ await query('SELECT 1'); res.json({ ok:true, db:'connected', time:new Date().toISOString() }); }
+  try{ await query('SELECT 1'); res.json({ ok:true, db:'connected', testMode:TEST_MODE, time:new Date().toISOString() }); }
   catch(e){ res.status(500).json({ ok:false, db:'error', error:String(e.message||e), code:e.code||'', hasDbUrl: !!process.env.DATABASE_URL }); }
 });
 
