@@ -13,6 +13,8 @@ export const pool = new Pool({
   idleTimeoutMillis: 20000,
   connectionTimeoutMillis: 15000,
   keepAlive: true,
+  // Supabase poolers can be strict; allow a bit more statement time
+  statement_timeout: 20000,
 });
 
 pool.on('error', (err) => {
