@@ -4,6 +4,7 @@
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>NEDLO Biennial 2027 – Stokvel Registration (Remote)</title>
+<script src="hierarchy.js"></script>
 <style>
 :root{--primary:#1a3a6b;--primary-light:#2456a4;--accent:#c8a951;--success:#16a34a;--bg:#f0f4f8;--surface:#fff;--border:#d1d5db;--text:#1f2937;--muted:#6b7280;}
 *{box-sizing:border-box;margin:0;padding:0;}
@@ -59,9 +60,16 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--muted);}
       <div class="form-group"><label>Full Name *</label><input id="r-name" placeholder="e.g. Dumisani Mphasane"/></div>
       <div class="row">
         <div class="col-half"><div class="form-group"><label>Conference *</label>
-          <select id="r-conf"><option value="">Select…</option><option>ECLO</option><option>NCLO</option><option>WCLO</option><option>OCLO</option><option>MMMCLO</option></select></div></div>
-        <div class="col-half"><div class="form-group"><label>Local Church</label><input id="r-church" placeholder="e.g. Sandton AME"/></div></div>
+          <select id="r-conf" onchange="onConfChange()"><option value="">Select…</option><option>ECLO</option><option>NCLO</option><option>WCLO</option><option>OCLO</option><option>MMMCLO</option></select></div></div>
+        <div class="col-half"><div class="form-group"><label>District *</label>
+          <select id="r-district" onchange="onDistrictChange()" disabled><option value="">Select conference first…</option></select></div></div>
       </div>
+      <div class="row">
+        <div class="col-half"><div class="form-group"><label>Station (Local Church) *</label>
+          <select id="r-station" onchange="onStationChange()" disabled><option value="">Select district first…</option></select></div></div>
+        <div class="col-half"><div class="form-group" id="r-station-new-wrap" style="display:none;"><label>New Station Name *</label><input id="r-station-new" placeholder="Type station/church name"/></div></div>
+      </div>
+      <input type="hidden" id="r-church"/>
       <div class="row">
         <div class="col-half"><div class="form-group"><label>Email *</label><input id="r-email" type="email" placeholder="your@email.com"/></div></div>
         <div class="col-half"><div class="form-group"><label>Phone *</label><input id="r-phone" type="tel" placeholder="082 000 0000"/></div></div>
@@ -123,6 +131,47 @@ const EXISTING_HOTEL_KEYS=['OPT-1','OPT-2','OPT-3','OPT-4','OPT-5','OPT-6'];
 EXISTING_HOTEL_KEYS.forEach(k=>{const o=OPTIONS[k];o.accom=r2(o.accomFull/8);o.reg=r2(REG_TOTAL/8);o.total=r2((o.accomFull+REG_TOTAL)/8);});
 let sel=null;
 function fmt(n){return'R'+Number(n).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g,',');}
+
+// ── Conference → District → Station cascade ──
+const HIER = JSON.parse(JSON.stringify(window.NEDLO_HIERARCHY || {}));
+const NEW_STATION_VALUE='__NEW__';
+(async function(){ try{
+  const res=await fetch('/api/stations'); if(!res.ok) return;
+  (await res.json()).forEach(c=>{ if(!c.conferenceCode||!c.district||!c.station) return;
+    (HIER[c.conferenceCode]=HIER[c.conferenceCode]||{}); (HIER[c.conferenceCode][c.district]=HIER[c.conferenceCode][c.district]||[]);
+    if(!HIER[c.conferenceCode][c.district].includes(c.station)) HIER[c.conferenceCode][c.district].push(c.station); });
+  if(document.getElementById('r-conf').value) onConfChange();
+}catch(e){} })();
+function onConfChange(){
+  const conf=document.getElementById('r-conf').value;
+  const dsel=document.getElementById('r-district');
+  const ds=HIER[conf]?Object.keys(HIER[conf]).sort():[];
+  dsel.innerHTML='<option value="">Select district…</option>'+ds.map(d=>`<option value="${d}">${d}</option>`).join('')+'<option value="'+NEW_STATION_VALUE+'">+ Other district (type new station)</option>';
+  dsel.disabled=!conf;
+  document.getElementById('r-station').innerHTML='<option value="">Select district first…</option>';
+  document.getElementById('r-station').disabled=true;
+  document.getElementById('r-station-new-wrap').style.display='none';
+  document.getElementById('r-church').value='';
+  if(sel) pick(sel);
+}
+function onDistrictChange(){
+  const conf=document.getElementById('r-conf').value, dist=document.getElementById('r-district').value;
+  if(dist===NEW_STATION_VALUE){ document.getElementById('r-station').disabled=true; document.getElementById('r-station').innerHTML='<option value="">(enter new station on the right)</option>'; document.getElementById('r-station-new-wrap').style.display='block'; document.getElementById('r-church').value=''; return; }
+  const ssel=document.getElementById('r-station');
+  const st=(HIER[conf]&&HIER[conf][dist])?HIER[conf][dist].slice().sort():[];
+  ssel.innerHTML='<option value="">Select station…</option>'+st.map(s=>`<option value="${s}">${s}</option>`).join('')+'<option value="'+NEW_STATION_VALUE+'">+ My station is not listed (add it)</option>';
+  ssel.disabled=!dist;
+  document.getElementById('r-station-new-wrap').style.display='none';
+  document.getElementById('r-church').value='';
+  if(sel) pick(sel);
+}
+function onStationChange(){
+  const stn=document.getElementById('r-station').value;
+  if(stn===NEW_STATION_VALUE){ document.getElementById('r-station-new-wrap').style.display='block'; document.getElementById('r-church').value=''; }
+  else { document.getElementById('r-station-new-wrap').style.display='none'; document.getElementById('r-church').value=stn; }
+  if(sel) pick(sel);
+}
+
 function rIcon(o){return o.regOnly?'📋':o.hotel.includes('Capital')?'🏨':o.hotel.includes('Catalyst')?'🏢':o.hotel.includes('Sun')?'☀️':o.hotel.includes('Tower')?'🏨':'🌿';}
 const list=document.getElementById('options-list');
 function rCard(k,o){
@@ -145,12 +194,21 @@ function pick(k){sel=k;document.querySelectorAll('.option-card').forEach(c=>c.cl
 const SCHED_NEW=['2026-10','2026-11','2026-12','2027-01','2027-02','2027-03','2027-04','2027-05'];
 const SCHED_REGONLY=['2026-10','2026-11','2026-12'];
 async function submitReg(){
-  const n=document.getElementById('r-name').value.trim(),c=document.getElementById('r-conf').value,ch=document.getElementById('r-church').value.trim(),e=document.getElementById('r-email').value.trim(),p=document.getElementById('r-phone').value.trim();
+  const n=document.getElementById('r-name').value.trim(),c=document.getElementById('r-conf').value,e=document.getElementById('r-email').value.trim(),p=document.getElementById('r-phone').value.trim();
   const err=document.getElementById('reg-error');err.classList.add('hidden');
-  if(!n||!c||!e||!p||!sel){err.textContent='Please complete all required fields and select an option.';err.classList.remove('hidden');return;}
+  // Resolve District + Station
+  let district=document.getElementById('r-district').value;
+  let station=document.getElementById('r-station').value;
+  const newStation=document.getElementById('r-station-new').value.trim();
+  let isNewStation=false;
+  if(district===NEW_STATION_VALUE){ district='Other'; if(!newStation){err.textContent='Please type your station/church name.';err.classList.remove('hidden');return;} station=newStation; isNewStation=true; }
+  else if(station===NEW_STATION_VALUE){ if(!newStation){err.textContent='Please type your station/church name.';err.classList.remove('hidden');return;} station=newStation; isNewStation=true; }
+  const ch=station;
+  if(!n||!c||!district||district===NEW_STATION_VALUE||!ch||!e||!p||!sel){err.textContent='Please complete all required fields (including District & Station) and select an option.';err.classList.remove('hidden');return;}
+  if(isNewStation){ try{ await fetch('/api/stations',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({conferenceCode:c,district,station})}); }catch(ex){} }
   const o=OPTIONS[sel],ref=(c+'-'+n).toUpperCase().replace(/\s+/g,' ').trim();
   const member={
-    fullName:n, conferenceCode:c, localChurch:ch, email:e, phone:p,
+    fullName:n, conferenceCode:c, localChurch:ch, district:district, email:e, phone:p,
     accommodationOption:sel, expectedMonthlyTotal:o.total, expectedAccom:o.accom, expectedReg:o.reg,
     paymentRef:ref, registrationDate:new Date().toISOString().split('T')[0], cohort:'new'
   };

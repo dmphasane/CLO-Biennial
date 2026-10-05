@@ -37,6 +37,7 @@ CREATE INDEX IF NOT EXISTS idx_members_conf ON members(conference_code);
 -- Add columns if upgrading an existing database
 ALTER TABLE members ADD COLUMN IF NOT EXISTS cohort TEXT DEFAULT 'legacy';
 ALTER TABLE members ADD COLUMN IF NOT EXISTS last_statement_sent_at TIMESTAMPTZ;
+ALTER TABLE members ADD COLUMN IF NOT EXISTS district TEXT;
 
 CREATE TABLE IF NOT EXISTS entries (
   id TEXT PRIMARY KEY,
@@ -65,6 +66,16 @@ CREATE INDEX IF NOT EXISTS idx_entries_upload ON entries(upload_id);
 -- Add columns if upgrading an existing database
 ALTER TABLE entries ADD COLUMN IF NOT EXISTS fingerprint TEXT;
 ALTER TABLE entries ADD COLUMN IF NOT EXISTS upload_id TEXT;
+
+-- Custom (user-added) stations that extend the built-in Conference/District/Station list
+CREATE TABLE IF NOT EXISTS custom_stations (
+  id SERIAL PRIMARY KEY,
+  conference_code TEXT NOT NULL,
+  district TEXT NOT NULL,
+  station TEXT NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  UNIQUE(conference_code, district, station)
+);
 
 CREATE TABLE IF NOT EXISTS uploads (
   id TEXT PRIMARY KEY,

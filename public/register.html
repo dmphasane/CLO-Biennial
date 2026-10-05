@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <title>NEDLO Biennial 2027 – Stokvel Registration</title>
+<script src="hierarchy.js"></script>
 <style>
 :root{--primary:#1a3a6b;--primary-light:#2456a4;--accent:#c8a951;--success:#16a34a;--danger:#dc2626;--bg:#f0f4f8;--surface:#fff;--border:#d1d5db;--text:#1f2937;--muted:#6b7280;}
 *{box-sizing:border-box;margin:0;padding:0;}
@@ -67,14 +68,25 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--muted);}
         <input id="r-name" placeholder="e.g. Dumisani Mphasane" required/></div>
       <div class="row">
         <div class="col-half"><div class="form-group"><label>Conference *</label>
-          <select id="r-conf">
+          <select id="r-conf" onchange="onConfChange()">
             <option value="">Select Conference…</option>
             <option>ECLO</option><option>NCLO</option><option>WCLO</option>
             <option>OCLO</option><option>MMMCLO</option>
           </select></div></div>
-        <div class="col-half"><div class="form-group"><label>Local Church</label>
-          <input id="r-church" placeholder="e.g. Sandton AME"/></div></div>
+        <div class="col-half"><div class="form-group"><label>District *</label>
+          <select id="r-district" onchange="onDistrictChange()" disabled>
+            <option value="">Select conference first…</option>
+          </select></div></div>
       </div>
+      <div class="row">
+        <div class="col-half"><div class="form-group"><label>Station (Local Church) *</label>
+          <select id="r-station" onchange="onStationChange()" disabled>
+            <option value="">Select district first…</option>
+          </select></div></div>
+        <div class="col-half"><div class="form-group" id="r-station-new-wrap" style="display:none;"><label>New Station Name *</label>
+          <input id="r-station-new" placeholder="Type the station/church name"/></div></div>
+      </div>
+      <input type="hidden" id="r-church"/>
       <div class="row">
         <div class="col-half"><div class="form-group"><label>Email Address *</label>
           <input id="r-email" type="email" placeholder="your@email.com"/></div></div>
@@ -179,6 +191,76 @@ let selectedOpt = null;
 function fmt(n){ return 'R'+Number(n).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g,','); }
 function normalize(ref){ return (ref||'').toUpperCase().replace(/\s+/g,' ').trim(); }
 
+// ── Conference → District → Station cascade ──
+const HIER = JSON.parse(JSON.stringify(window.NEDLO_HIERARCHY || {}));
+const NEW_STATION_VALUE = '__NEW__';
+// Merge server-side custom stations into the hierarchy on load
+(async function loadCustomStations(){
+  try{
+    const res = await fetch('/api/stations');
+    if(!res.ok) return;
+    const custom = await res.json();
+    custom.forEach(c=>{
+      if(!c.conferenceCode||!c.district||!c.station) return;
+      if(!HIER[c.conferenceCode]) HIER[c.conferenceCode] = {};
+      if(!HIER[c.conferenceCode][c.district]) HIER[c.conferenceCode][c.district] = [];
+      if(!HIER[c.conferenceCode][c.district].includes(c.station)) HIER[c.conferenceCode][c.district].push(c.station);
+    });
+    // If a conference is already selected, refresh its districts
+    if(document.getElementById('r-conf').value) onConfChange();
+  }catch(e){ /* offline — built-in list still works */ }
+})();
+function fillDistricts(conf){
+  const dsel = document.getElementById('r-district');
+  const districts = HIER[conf] ? Object.keys(HIER[conf]).sort() : [];
+  dsel.innerHTML = '<option value="">Select district…</option>' +
+    districts.map(d=>`<option value="${d}">${d}</option>`).join('') +
+    '<option value="'+NEW_STATION_VALUE+'">+ Other district (type new station)</option>';
+  dsel.disabled = !conf;
+}
+function fillStations(conf, district){
+  const ssel = document.getElementById('r-station');
+  const stations = (HIER[conf] && HIER[conf][district]) ? HIER[conf][district].slice().sort() : [];
+  ssel.innerHTML = '<option value="">Select station…</option>' +
+    stations.map(s=>`<option value="${s}">${s}</option>`).join('') +
+    '<option value="'+NEW_STATION_VALUE+'">+ My station is not listed (add it)</option>';
+  ssel.disabled = !district;
+}
+function onConfChange(){
+  const conf = document.getElementById('r-conf').value;
+  fillDistricts(conf);
+  document.getElementById('r-station').innerHTML = '<option value="">Select district first…</option>';
+  document.getElementById('r-station').disabled = true;
+  document.getElementById('r-station-new-wrap').style.display = 'none';
+  document.getElementById('r-church').value = '';
+  if(selectedOpt) selectOption(selectedOpt);
+}
+function onDistrictChange(){
+  const conf = document.getElementById('r-conf').value;
+  const dist = document.getElementById('r-district').value;
+  if(dist === NEW_STATION_VALUE){
+    // District not listed → free-type both district and station
+    document.getElementById('r-station').disabled = true;
+    document.getElementById('r-station').innerHTML = '<option value="">(enter new station on the right)</option>';
+    document.getElementById('r-station-new-wrap').style.display = 'block';
+    document.getElementById('r-church').value = '';
+    return;
+  }
+  fillStations(conf, dist);
+  document.getElementById('r-station-new-wrap').style.display = 'none';
+  document.getElementById('r-church').value = '';
+}
+function onStationChange(){
+  const stn = document.getElementById('r-station').value;
+  if(stn === NEW_STATION_VALUE){
+    document.getElementById('r-station-new-wrap').style.display = 'block';
+    document.getElementById('r-church').value = '';
+  } else {
+    document.getElementById('r-station-new-wrap').style.display = 'none';
+    document.getElementById('r-church').value = stn;
+  }
+}
+
 // Render option cards
 const EXISTING_HOTEL_KEYS = ['OPT-1','OPT-2','OPT-3','OPT-4','OPT-5','OPT-6'];
 function optIcon(o){ return o.regOnly?'📋':o.hotel.includes('Capital')?'🏨':o.hotel.includes('Catalyst')?'🏢':o.hotel.includes('Sun')?'☀️':o.hotel.includes('Tower')?'🏨':'🌿'; }
@@ -237,22 +319,46 @@ function selectOption(key){
 async function submitRegistration(){
   const name=document.getElementById('r-name').value.trim();
   const conf=document.getElementById('r-conf').value;
-  const church=document.getElementById('r-church').value.trim();
   const email=document.getElementById('r-email').value.trim();
   const phone=document.getElementById('r-phone').value.trim();
   const errEl=document.getElementById('reg-error');
   errEl.classList.add('hidden');
+
+  // Resolve District + Station (handling the "not listed" new-station paths)
+  let district = document.getElementById('r-district').value;
+  let station = document.getElementById('r-station').value;
+  const newStation = document.getElementById('r-station-new').value.trim();
+  let isNewStation = false;
+  if(district === NEW_STATION_VALUE){
+    // User chose "Other district" — must type a new station; district stays as typed label
+    district = 'Other';
+    if(!newStation){ errEl.textContent='Please type your station/church name.'; errEl.classList.remove('hidden'); return; }
+    station = newStation; isNewStation = true;
+  } else if(station === NEW_STATION_VALUE){
+    if(!newStation){ errEl.textContent='Please type your station/church name.'; errEl.classList.remove('hidden'); return; }
+    station = newStation; isNewStation = true;
+  }
+  const church = station;
+
   // Validate
   if(!name){errEl.textContent='Please enter your full name.';errEl.classList.remove('hidden');return;}
   if(!conf){errEl.textContent='Please select your conference.';errEl.classList.remove('hidden');return;}
+  if(!district || district===NEW_STATION_VALUE){errEl.textContent='Please select your district.';errEl.classList.remove('hidden');return;}
+  if(!church){errEl.textContent='Please select or enter your station (local church).';errEl.classList.remove('hidden');return;}
   if(!email){errEl.textContent='Please enter your email address.';errEl.classList.remove('hidden');return;}
   if(!phone){errEl.textContent='Please enter your contact number.';errEl.classList.remove('hidden');return;}
   if(!selectedOpt){errEl.textContent='Please select an accommodation option.';errEl.classList.remove('hidden');return;}
 
+  // If a new station was entered, register it so others can select it later
+  if(isNewStation){
+    try{ await fetch('/api/stations',{ method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ conferenceCode:conf, district, station }) }); }
+    catch(e){ /* non-fatal */ }
+  }
+
   const o=OPTIONS[selectedOpt];
   const ref=normalize(conf+'-'+name);
   const member={
-    fullName:name, conferenceCode:conf, localChurch:church,
+    fullName:name, conferenceCode:conf, localChurch:church, district:district,
     email:email, phone:phone, accommodationOption:selectedOpt,
     expectedMonthlyTotal:o.total, expectedAccom:o.accom, expectedReg:o.reg,
     paymentRef:ref, registrationDate:new Date().toISOString().split('T')[0],

@@ -143,13 +143,13 @@ app.post('/api/members', authRequired, async (req, res)=>{
   const m = req.body;
   await query(
     `INSERT INTO members (id,full_name,conference_code,local_church,email,phone,accommodation_option,
-       expected_monthly_total,expected_accom,expected_reg,payment_ref,registration_date,ledger,cohort,last_statement_sent_at)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+       expected_monthly_total,expected_accom,expected_reg,payment_ref,registration_date,ledger,cohort,last_statement_sent_at,district)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
      ON CONFLICT (id) DO UPDATE SET full_name=$2,conference_code=$3,local_church=$4,email=$5,phone=$6,
        accommodation_option=$7,expected_monthly_total=$8,expected_accom=$9,expected_reg=$10,payment_ref=$11,
-       ledger=$13,cohort=$14,last_statement_sent_at=$15,updated_at=now()`,
+       ledger=$13,cohort=$14,last_statement_sent_at=$15,district=$16,updated_at=now()`,
     [m.id, m.fullName, m.conferenceCode, m.localChurch, m.email, m.phone, m.accommodationOption,
-     m.expectedMonthlyTotal, m.expectedAccom, m.expectedReg, m.paymentRef, m.registrationDate, JSON.stringify(m.ledger||{}), m.cohort||'legacy', m.lastStatementSentAt||null]
+     m.expectedMonthlyTotal, m.expectedAccom, m.expectedReg, m.paymentRef, m.registrationDate, JSON.stringify(m.ledger||{}), m.cohort||'legacy', m.lastStatementSentAt||null, m.district||null]
   );
   await logAudit(req.user, 'MemberSave', m.paymentRef);
   res.json({ ok:true });
@@ -253,11 +253,21 @@ app.post('/api/register', regLimiter, async (req, res)=>{
   if(dup.rows.length) return res.status(409).json({ error:'A registration with this reference already exists.' });
   await query(
     `INSERT INTO members (id,full_name,conference_code,local_church,email,phone,accommodation_option,
-       expected_monthly_total,expected_accom,expected_reg,payment_ref,registration_date,ledger,cohort)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
+       expected_monthly_total,expected_accom,expected_reg,payment_ref,registration_date,ledger,cohort,district)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
     [m.id, m.fullName, m.conferenceCode, m.localChurch, m.email, m.phone, m.accommodationOption,
-     m.expectedMonthlyTotal, m.expectedAccom, m.expectedReg, m.paymentRef, m.registrationDate, JSON.stringify(m.ledger||{}), m.cohort||'new']
+     m.expectedMonthlyTotal, m.expectedAccom, m.expectedReg, m.paymentRef, m.registrationDate, JSON.stringify(m.ledger||{}), m.cohort||'new', m.district||null]
   );
+  // If the member added a new station, persist it so others can select it next time
+  if(m.district && m.localChurch){
+    try{
+      await query(
+        `INSERT INTO custom_stations (conference_code, district, station) VALUES ($1,$2,$3)
+         ON CONFLICT (conference_code, district, station) DO NOTHING`,
+        [String(m.conferenceCode).toUpperCase(), String(m.district).trim(), String(m.localChurch).trim()]
+      );
+    }catch(e){ console.error('station upsert on register failed:', e.message); }
+  }
   await logAudit({ name:'Self-Registration', role:'Member' }, 'Register', m.paymentRef);
   // Send confirmation email to the registrant (non-blocking — never fail the
   // registration if email cannot be sent, e.g. no provider configured).
@@ -277,6 +287,36 @@ app.post('/api/register', regLimiter, async (req, res)=>{
   res.json({ ok:true });
 });
 
+// ─── CUSTOM STATIONS (public: used by registration forms + admin) ───
+// GET returns all user-added stations grouped by conference/district so the
+// registration dropdowns can merge them with the built-in hierarchy.
+app.get('/api/stations', async (req, res)=>{
+  try{
+    const r = await query('SELECT conference_code, district, station FROM custom_stations ORDER BY conference_code, district, station');
+    res.json(r.rows.map(x=>({ conferenceCode:x.conference_code, district:x.district, station:x.station })));
+  }catch(e){ res.json([]); }
+});
+// POST adds a new station (public, rate-limited). Idempotent via UNIQUE constraint.
+const stationLimiter = rateLimit({ windowMs: 60*60*1000, max: 100 });
+app.post('/api/stations', stationLimiter, async (req, res)=>{
+  const { conferenceCode, district, station } = req.body||{};
+  if(!conferenceCode || !district || !station){
+    return res.status(400).json({ error:'conferenceCode, district and station are required' });
+  }
+  const conf = String(conferenceCode).trim().toUpperCase();
+  const dist = String(district).trim();
+  const stn  = String(station).trim();
+  if(!dist || !stn) return res.status(400).json({ error:'district and station cannot be blank' });
+  try{
+    await query(
+      `INSERT INTO custom_stations (conference_code, district, station) VALUES ($1,$2,$3)
+       ON CONFLICT (conference_code, district, station) DO NOTHING`,
+      [conf, dist, stn]
+    );
+    res.json({ ok:true, conferenceCode:conf, district:dist, station:stn });
+  }catch(e){ res.status(500).json({ error:String(e.message||e) }); }
+});
+
 // ─── CLOUDINARY: signed upload for statement files / exports ───
 app.get('/api/cloudinary/signature', authRequired, (req, res)=>{
   const timestamp = Math.round(Date.now()/1000);
@@ -291,7 +331,7 @@ function rowToMember(r){
     email:r.email, phone:r.phone, accommodationOption:r.accommodation_option,
     expectedMonthlyTotal:Number(r.expected_monthly_total), expectedAccom:Number(r.expected_accom),
     expectedReg:Number(r.expected_reg), paymentRef:r.payment_ref, registrationDate:r.registration_date,
-    cohort:r.cohort||'legacy', lastStatementSentAt:r.last_statement_sent_at||null,
+    cohort:r.cohort||'legacy', lastStatementSentAt:r.last_statement_sent_at||null, district:r.district||'',
     roomNumber:r.room_number, hotelRoom:r.hotel_room, roomPartner:r.room_partner, ledger:r.ledger||{} };
 }
 function rowToEntry(r){
