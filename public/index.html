@@ -137,7 +137,7 @@ select[multiple]{height:auto;min-height:80px;}
       </select>
     </div>
     <button class="btn btn-primary" style="width:100%;justify-content:center;padding:12px;" onclick="doLogin()">Sign In</button>
-    <p style="text-align:center;margin-top:14px;font-size:11px;color:var(--muted);">Protected under POPIA. Authorised personnel only. <strong>v2.3-build5</strong></p>
+    <p style="text-align:center;margin-top:14px;font-size:11px;color:var(--muted);">Protected under POPIA. Authorised personnel only. <strong>v2.4-build6</strong></p>
   </div>
 </div>
 
@@ -845,28 +845,43 @@ function uid(){ return 'ID-' + Math.random().toString(36).substr(2,9).toUpperCas
 function today(){ return new Date().toISOString().split('T')[0]; }
 function parseDate(str){
   if(!str) return null;
-  const s = String(str).trim();
-  // Try ISO format first: 2026-06-25
-  let d = new Date(s);
-  if(!isNaN(d) && d.getFullYear()>2000) return d;
-  // Try DD/MM/YYYY or DD-MM-YYYY (common SA format)
-  const parts = s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})$/);
-  if(parts){
-    const day=parseInt(parts[1]), month=parseInt(parts[2]), year=parseInt(parts[3]);
+  let s = String(str).trim();
+  // Strip any time component (e.g. "2026-09-11 00:00:00" or "2026-09-11T00:00")
+  s = s.split(/[ T]/)[0].trim();
+  let d;
+  // 1) ISO / YYYY-MM-DD or YYYY/MM/DD (unambiguous: year first)
+  let p = s.match(/^(\d{4})[\/\-.](\d{1,2})[\/\-.](\d{1,2})$/);
+  if(p){
+    const year=+p[1], month=+p[2], day=+p[3];
     if(month>=1 && month<=12 && day>=1 && day<=31){
       d = new Date(year, month-1, day);
       if(!isNaN(d)) return d;
     }
   }
-  // Try YYYY/MM/DD
-  const parts2 = s.match(/^(\d{4})[\/\-.](\d{1,2})[\/\-.](\d{1,2})$/);
-  if(parts2){
-    d = new Date(parseInt(parts2[1]), parseInt(parts2[2])-1, parseInt(parts2[3]));
-    if(!isNaN(d)) return d;
+  // 2) DD/MM/YYYY or DD-MM-YYYY (South African format) — parse EXPLICITLY.
+  //    Do NOT use new Date() here: it would read 11/09/2026 as US MM/DD and give
+  //    the wrong date, which breaks duplicate detection across statement exports.
+  p = s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})$/);
+  if(p){
+    let day=+p[1], month=+p[2]; const year=+p[3];
+    // If the first number can't be a day but could be a month, swap (defensive).
+    if(day>12 && month<=12){ /* clearly DD/MM */ }
+    else if(month>12 && day<=12){ const t=day; day=month; month=t; } // was MM/DD
+    if(month>=1 && month<=12 && day>=1 && day<=31){
+      d = new Date(year, month-1, day);
+      if(!isNaN(d)) return d;
+    }
   }
-  // Try "25 Jun 2026" or "25 June 2026"
-  d = new Date(s);
-  if(!isNaN(d)) return d;
+  // 3) Textual dates like "25 Jun 2026" / "25 June 2026" / "Jun 25, 2026"
+  if(/[A-Za-z]/.test(s)){
+    d = new Date(s);
+    if(!isNaN(d) && d.getFullYear()>2000) return d;
+  }
+  // 4) Last resort: let the engine try (ISO 8601 only is safe here)
+  if(/^\d{4}-\d{2}-\d{2}/.test(s)){
+    d = new Date(s);
+    if(!isNaN(d) && d.getFullYear()>2000) return d;
+  }
   return null;
 }
 function isoDate(str){
