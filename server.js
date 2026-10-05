@@ -9,7 +9,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
 import { pool, query } from './db.js';
-import { makeTransport, buildStatementHTML } from './email.js';
+import { makeTransport, buildStatementHTML, buildRegistrationConfirmationHTML } from './email.js';
 
 dotenv.config();
 
@@ -215,6 +215,24 @@ app.post('/api/register', regLimiter, async (req, res)=>{
      m.expectedMonthlyTotal, m.expectedAccom, m.expectedReg, m.paymentRef, m.registrationDate, JSON.stringify(m.ledger||{}), m.cohort||'new']
   );
   await logAudit({ name:'Self-Registration', role:'Member' }, 'Register', m.paymentRef);
+  // Send confirmation email to the registrant (non-blocking — never fail the
+  // registration if email cannot be sent, e.g. Gmail env vars not configured).
+  if(m.email && process.env.GMAIL_APP_PASSWORD){
+    (async ()=>{
+      try{
+        const html = buildRegistrationConfirmationHTML(m);
+        const transport = makeTransport();
+        await transport.sendMail({
+          from: `"NEDLO Biennial 2027" <${process.env.GMAIL_USER||'nedloregistration@gmail.com'}>`,
+          to: m.email,
+          cc: process.env.GMAIL_USER || 'nedloregistration@gmail.com', // notify the office
+          subject: `NEDLO Biennial 2027 – Registration Confirmation (${m.paymentRef})`,
+          html,
+        });
+        await logAudit({ name:'System', role:'' }, 'RegistrationEmail', `Confirmation sent to ${m.fullName} (${m.email})`);
+      }catch(err){ console.error('Registration confirmation email failed:', err.message); }
+    })();
+  }
   res.json({ ok:true });
 });
 
