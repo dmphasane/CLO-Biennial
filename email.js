@@ -1,12 +1,12 @@
-﻿import nodemailer from 'nodemailer';
+import nodemailer from 'nodemailer';
 import dotenv from 'dotenv';
 dotenv.config();
 
 const FROM_EMAIL = process.env.GMAIL_USER || 'nedloregistration@gmail.com';
 const FROM_NAME  = 'NEDLO Biennial 2027';
 
-// ─── Unified email sender ───
-// Primary path: Brevo HTTP API (works on Render — uses HTTPS/443, no SMTP ports).
+// --- Unified email sender ---
+// Primary path: Brevo HTTP API (works on Render - uses HTTPS/443, no SMTP ports).
 // Fallback: Gmail SMTP via nodemailer (only works where SMTP ports are open).
 // Returns { ok, provider, id?, error? } and never throws.
 export async function sendEmail({ to, subject, html, text, cc }){
@@ -53,15 +53,12 @@ export async function sendEmail({ to, subject, html, text, cc }){
 }
 
 // Gmail transport using an App Password (never the account password).
-// NOTE: Render blocks the default SMTP ports (465/587) which causes ETIMEDOUT.
-// We use STARTTLS on port 587 with an explicit host and a short timeout, and
-// strip any spaces from the app password (Google displays it with spaces).
 export function makeTransport(){
   const pass = (process.env.GMAIL_APP_PASSWORD || '').replace(/\s+/g, '');
   return nodemailer.createTransport({
     host: 'smtp.gmail.com',
     port: Number(process.env.SMTP_PORT || 587),
-    secure: false,            // STARTTLS (upgrade on 587)
+    secure: false,
     requireTLS: true,
     auth: { user: FROM_EMAIL, pass },
     connectionTimeout: 15000,
@@ -70,7 +67,7 @@ export function makeTransport(){
   });
 }
 
-// â”€â”€â”€ Domain constants (must mirror the frontend) â”€â”€â”€
+// --- Domain constants (must mirror the frontend) ---
 const REG_TOTAL = 5700;
 const SCHEDULES = {
   legacy: ['2026-06','2026-07','2026-08','2026-09','2026-10','2026-11','2026-12','2027-01','2027-02','2027-03','2027-04','2027-05'],
@@ -78,6 +75,8 @@ const SCHEDULES = {
   regonly:['2026-10','2026-11','2026-12'],
 };
 const r2 = n => parseFloat(n.toFixed(2));
+const DASH = '&ndash;';   // en-dash as an HTML entity (encoding-safe)
+const MDASH = '&mdash;';
 const OPTIONS = {
   'OPT-1':{hotel:'Sandton Sun',type:'Not Sharing',total:2122.92,accom:1647.92,reg:475},
   'OPT-2':{hotel:'Sandton Sun',type:'Sharing',total:1382.29,accom:907.29,reg:475},
@@ -103,8 +102,12 @@ function elapsedMonths(m){
   const now=new Date(); const nk=now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0');
   return memberSchedule(m).filter(k=>k<=nk);
 }
+// Wrap any email body in a full UTF-8 HTML document so mail clients render it correctly.
+function wrapDoc(inner){
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/></head><body style="margin:0;padding:0;">${inner}</body></html>`;
+}
 
-// â”€â”€â”€ Build professional HTML statement (mirrors the letter preview) â”€â”€â”€
+// --- Build professional HTML statement (mirrors the letter preview) ---
 export function buildStatementHTML(m, entries, settings={}){
   const opt = OPTIONS[m.accommodationOption]||{};
   const isFlex = opt.flexAmount;
@@ -130,19 +133,19 @@ export function buildStatementHTML(m, entries, settings={}){
 
   let scheduleRows='';
   mSched.map(k=>({key:k,label:monthLabel(k)})).forEach((mo,idx)=>{
-    let amtRec='â€”', dateRec='â€”', status='Not Yet Due', bg='#fafafa', color='#6b7280';
+    let amtRec='&mdash;', dateRec='&mdash;', status='Not Yet Due', bg='#fafafa', color='#6b7280';
     const isElapsed = elapsed.some(e=>e===mo.key);
     if(!isFlex && idx<monthsCovered){
       amtRec=fmt(m.expectedMonthlyTotal);
       const e=uniqueEntries[Math.min(idx,uniqueEntries.length-1)];
-      dateRec=e?e.txnDate:'â€”'; status='Received'; bg='#f0fdf4'; color='#16a34a';
+      dateRec=e?e.txnDate:'&mdash;'; status='Received'; bg='#f0fdf4'; color='#16a34a';
     } else if(!isFlex && idx===monthsCovered && excess>0.05){
       amtRec=fmt(excess); status='Partially Paid'; bg='#fefce8'; color='#b45309';
-      const e=uniqueEntries[uniqueEntries.length-1]; dateRec=e?e.txnDate:'â€”';
+      const e=uniqueEntries[uniqueEntries.length-1]; dateRec=e?e.txnDate:'&mdash;';
     } else if(isElapsed){ status='Outstanding'; bg='#fef2f2'; color='#dc2626'; }
     scheduleRows+=`<tr style="background:${bg};">
       <td style="padding:5px 8px;border-bottom:1px solid #e5e7eb;">${mo.label}</td>
-      <td style="padding:5px 8px;border-bottom:1px solid #e5e7eb;text-align:right;">${isFlex?'â€”':fmt(m.expectedMonthlyTotal)}</td>
+      <td style="padding:5px 8px;border-bottom:1px solid #e5e7eb;text-align:right;">${isFlex?'&mdash;':fmt(m.expectedMonthlyTotal)}</td>
       <td style="padding:5px 8px;border-bottom:1px solid #e5e7eb;text-align:right;font-weight:600;">${amtRec}</td>
       <td style="padding:5px 8px;border-bottom:1px solid #e5e7eb;">${dateRec}</td>
       <td style="padding:5px 8px;border-bottom:1px solid #e5e7eb;font-weight:600;color:${color};">${status}</td>
@@ -159,24 +162,24 @@ export function buildStatementHTML(m, entries, settings={}){
   }
 
   const banner = isFullyPaid
-    ? `<div style="background:#dcfce7;border:1px solid #86efac;border-radius:6px;padding:12px;margin:14px 0;color:#15803d;"><strong>âœ… FULLY PAID â€” Thank you!</strong> Your accommodation and registration are confirmed.</div>`
-    : (!isFlex ? `<div style="background:#fef9c3;border:1px solid #fde047;border-radius:6px;padding:12px;margin:14px 0;color:#854d0e;"><strong>âš  Outstanding Balance: ${fmt(outstanding)}</strong> â€” please settle by ${deadline}.</div>` : '');
+    ? `<div style="background:#dcfce7;border:1px solid #86efac;border-radius:6px;padding:12px;margin:14px 0;color:#15803d;"><strong>&#10004; FULLY PAID ${DASH} Thank you!</strong> Your accommodation and registration are confirmed.</div>`
+    : (!isFlex ? `<div style="background:#fef9c3;border:1px solid #fde047;border-radius:6px;padding:12px;margin:14px 0;color:#854d0e;"><strong>&#9888; Outstanding Balance: ${fmt(outstanding)}</strong> ${DASH} please settle by ${deadline}.</div>` : '');
 
   const bankBox = isFullyPaid ? '' : `<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px;padding:12px;margin:14px 0;">
-    <div style="font-weight:700;color:#1a3a6b;margin-bottom:6px;">ðŸ’³ BANKING DETAILS</div>
+    <div style="font-weight:700;color:#1a3a6b;margin-bottom:6px;">BANKING DETAILS</div>
     <table style="width:100%;font-size:13px;">
-      <tr><td style="color:#6b7280;">Account Name</td><td>Biennial 2027 â€“ Lay Organization Stokvel Fund</td></tr>
+      <tr><td style="color:#6b7280;">Account Name</td><td>Biennial 2027 ${DASH} Lay Organization Stokvel Fund</td></tr>
       <tr><td style="color:#6b7280;">Account No.</td><td style="font-weight:700;">63211345582</td></tr>
       <tr><td style="color:#6b7280;">Bank</td><td>First National Bank (FNB)</td></tr>
       <tr><td style="color:#6b7280;">Branch Code</td><td>250655</td></tr>
       <tr><td style="color:#1a3a6b;font-weight:700;">Your Reference</td><td style="font-weight:800;color:#1a3a6b;">${m.paymentRef}</td></tr>
     </table></div>`;
 
-  return `<div style="font-family:'Segoe UI',Arial,sans-serif;font-size:13px;color:#1f2937;max-width:700px;margin:0 auto;">
+  const body = `<div style="font-family:'Segoe UI',Arial,sans-serif;font-size:13px;color:#1f2937;max-width:700px;margin:0 auto;">
     <div style="border-bottom:3px solid #1a3a6b;padding-bottom:12px;margin-bottom:14px;">
       ${logoUrl?`<img src="${logoUrl}" style="width:60px;height:60px;border-radius:50%;vertical-align:middle;margin-right:12px;"/>`:''}
       <span style="font-size:16px;font-weight:700;color:#1a3a6b;vertical-align:middle;">NEDLO Biennial 2027 Stokvel Fund</span><br/>
-      <span style="font-size:11px;color:#6b7280;">Confirmation of Contributions Received â€” 19th Episcopal District Lay Organisation</span>
+      <span style="font-size:11px;color:#6b7280;">Confirmation of Contributions Received ${DASH} 19th Episcopal District Lay Organisation</span>
     </div>
     <p>Date: <strong>${new Date().toLocaleDateString('en-ZA',{day:'2-digit',month:'long',year:'numeric'})}</strong> &nbsp; | &nbsp; Conference: <strong>${m.conferenceCode}</strong></p>
     <p>Dear ${surname},</p>
@@ -184,12 +187,12 @@ export function buildStatementHTML(m, entries, settings={}){
     ${banner}
     <div style="font-weight:700;color:#1a3a6b;margin:14px 0 6px;">SELECTED OPTION</div>
     <table style="width:100%;font-size:13px;">
-      <tr><td style="color:#6b7280;width:220px;">Option</td><td><strong>${m.accommodationOption}${opt.hotel&&opt.hotel!=='N/A'?' â€“ '+opt.hotel+' ('+opt.type+')':' â€“ Once Off / Flexible'}</strong></td></tr>
+      <tr><td style="color:#6b7280;width:220px;">Option</td><td><strong>${m.accommodationOption}${opt.hotel&&opt.hotel!=='N/A'?' '+DASH+' '+opt.hotel+' ('+opt.type+')':' '+DASH+' Once Off / Flexible'}</strong></td></tr>
       <tr><td style="color:#6b7280;">Biennial Registration</td><td>${isFlex?'Flexible':fmt(m.expectedReg)+'/mo ('+fmt(totalReg12)+' total)'}</td></tr>
       <tr><td style="color:#6b7280;">Accommodation</td><td>${isFlex?'Flexible':fmt(m.expectedAccom)+'/mo ('+fmt(totalAccom12)+' total)'}</td></tr>
       <tr><td style="color:#1a3a6b;font-weight:700;">Total (${nMo} months)</td><td style="font-weight:700;">${isFlex?'Flexible':fmt(totalExp12)}</td></tr>
     </table>
-    <div style="font-weight:700;color:#1a3a6b;margin:14px 0 6px;">PAYMENT SCHEDULE & STATUS</div>
+    <div style="font-weight:700;color:#1a3a6b;margin:14px 0 6px;">PAYMENT SCHEDULE &amp; STATUS</div>
     <table style="width:100%;border-collapse:collapse;font-size:12px;">
       <thead><tr style="background:#1a3a6b;color:#fff;"><th style="padding:7px;text-align:left;">Month</th><th style="padding:7px;text-align:right;">Amount Due</th><th style="padding:7px;text-align:right;">Received</th><th style="padding:7px;text-align:left;">Date</th><th style="padding:7px;text-align:left;">Status</th></tr></thead>
       <tbody>${scheduleRows}</tbody>
@@ -200,7 +203,7 @@ export function buildStatementHTML(m, entries, settings={}){
       <table style="width:100%;font-size:13px;">
         <tr><td>Total Amount Due (${nMo} mo)</td><td style="text-align:right;font-weight:700;">${isFlex?'Flexible':fmt(totalExp12)}</td></tr>
         <tr><td>Total Received to Date</td><td style="text-align:right;font-weight:700;color:#16a34a;">${fmt(actualPaid)}</td></tr>
-        <tr style="border-top:2px solid #1a3a6b;"><td style="font-weight:800;">Balance Outstanding</td><td style="text-align:right;font-weight:800;color:${isFullyPaid?'#16a34a':'#dc2626'};">${isFullyPaid?'NIL â€“ FULLY PAID':fmt(outstanding)}</td></tr>
+        <tr style="border-top:2px solid #1a3a6b;"><td style="font-weight:800;">Balance Outstanding</td><td style="text-align:right;font-weight:800;color:${isFullyPaid?'#16a34a':'#dc2626'};">${isFullyPaid?'NIL '+DASH+' FULLY PAID':fmt(outstanding)}</td></tr>
       </table>
     </div>
     ${!isFullyPaid?`<p style="font-size:12px;color:#374151;">Please note the due date for Biennial Registration is <strong>31 December 2026</strong> (required to register members with CLO). Should the balance not be settled by <strong>${deadline}</strong>, your accommodation allocation may be affected. If you have already paid an amount not reflected here, contact us within seven (7) days.</p>`:''}
@@ -209,9 +212,10 @@ export function buildStatementHTML(m, entries, settings={}){
       <p>Yours in service,<br/><strong>${finsecName}</strong><br/>Financial Secretary, NEDLO<br/><a href="mailto:${fromEmail}">${fromEmail}</a></p>
     </div>
   </div>`;
+  return wrapDoc(body);
 }
 
-// â”€â”€â”€ Build a registration CONFIRMATION email (sent on self-registration) â”€â”€â”€
+// --- Build a registration CONFIRMATION email (sent on self-registration) ---
 export function buildRegistrationConfirmationHTML(m){
   const opt = OPTIONS[m.accommodationOption] || {};
   const sched = memberSchedule(m);
@@ -223,10 +227,9 @@ export function buildRegistrationConfirmationHTML(m){
   const accomTotal  = r2(accomM*nMo);
   const regTotal    = r2(regM*nMo);
   const surname = (m.fullName||'').trim().split(' ').pop();
-  const periodLabel = `${monthLabel(sched[0])} â€“ ${monthLabel(sched[nMo-1])}`;
+  const periodLabel = `${monthLabel(sched[0])} ${DASH} ${monthLabel(sched[nMo-1])}`;
   const isRegOnly = opt.scheduleKey === 'regonly';
 
-  // Monthly schedule rows
   let scheduleRows = '';
   sched.forEach((k,i)=>{
     scheduleRows += `<tr style="background:${i%2?'#fafafa':'#fff'};">
@@ -235,31 +238,31 @@ export function buildRegistrationConfirmationHTML(m){
     </tr>`;
   });
 
-  return `<div style="font-family:'Segoe UI',Arial,sans-serif;font-size:13px;color:#1f2937;max-width:700px;margin:0 auto;">
+  const body = `<div style="font-family:'Segoe UI',Arial,sans-serif;font-size:13px;color:#1f2937;max-width:700px;margin:0 auto;">
     <div style="border-bottom:3px solid #1a3a6b;padding-bottom:12px;margin-bottom:14px;">
       <span style="font-size:16px;font-weight:700;color:#1a3a6b;">NEDLO Biennial 2027 Stokvel Fund</span><br/>
-      <span style="font-size:11px;color:#6b7280;">Registration Confirmation â€” 19th Episcopal District Lay Organisation</span>
+      <span style="font-size:11px;color:#6b7280;">Registration Confirmation ${DASH} 19th Episcopal District Lay Organisation</span>
     </div>
     <p>Dear ${surname},</p>
-    <p>Thank you for registering for the <strong>40th Lay Biennial Convention</strong> (8â€“11 August 2027, Sandton). This email confirms your registration and selected option.</p>
+    <p>Thank you for registering for the <strong>40th Lay Biennial Convention</strong> (8${DASH}11 August 2027, Sandton). This email confirms your registration and selected option.</p>
     <div style="background:#dcfce7;border:1px solid #86efac;border-radius:6px;padding:12px;margin:14px 0;color:#15803d;">
-      <strong>âœ… Registration received.</strong> Please use your reference <strong>${m.paymentRef}</strong> for every payment.
+      <strong>&#10004; Registration received.</strong> Please use your reference <strong>${m.paymentRef}</strong> for every payment.
     </div>
 
     <div style="font-weight:700;color:#1a3a6b;margin:14px 0 6px;">YOUR DETAILS</div>
     <table style="width:100%;font-size:13px;">
       <tr><td style="color:#6b7280;width:200px;">Full Name</td><td><strong>${m.fullName}</strong></td></tr>
       <tr><td style="color:#6b7280;">Conference</td><td>${m.conferenceCode}</td></tr>
-      <tr><td style="color:#6b7280;">Local Church</td><td>${m.localChurch||'â€”'}</td></tr>
-      <tr><td style="color:#6b7280;">Email</td><td>${m.email||'â€”'}</td></tr>
-      <tr><td style="color:#6b7280;">Phone</td><td>${m.phone||'â€”'}</td></tr>
+      <tr><td style="color:#6b7280;">Local Church</td><td>${m.localChurch||'&mdash;'}</td></tr>
+      <tr><td style="color:#6b7280;">Email</td><td>${m.email||'&mdash;'}</td></tr>
+      <tr><td style="color:#6b7280;">Phone</td><td>${m.phone||'&mdash;'}</td></tr>
     </table>
 
-    <div style="font-weight:700;color:#1a3a6b;margin:16px 0 6px;">SELECTED OPTION & COST BREAKDOWN</div>
+    <div style="font-weight:700;color:#1a3a6b;margin:16px 0 6px;">SELECTED OPTION &amp; COST BREAKDOWN</div>
     <table style="width:100%;font-size:13px;">
-      <tr><td style="color:#6b7280;width:200px;">Option</td><td><strong>${m.accommodationOption} â€“ ${opt.hotel||''}${opt.type?' ('+opt.type+')':''}</strong></td></tr>
-      ${isRegOnly ? '' : `<tr><td style="color:#6b7280;">Accommodation</td><td>${fmt(accomM)}/mo &nbsp;Ã—&nbsp; ${nMo} = <strong>${fmt(accomTotal)}</strong></td></tr>`}
-      <tr><td style="color:#6b7280;">Biennial Registration</td><td>${fmt(regM)}/mo &nbsp;Ã—&nbsp; ${nMo} = <strong>${fmt(regTotal)}</strong></td></tr>
+      <tr><td style="color:#6b7280;width:200px;">Option</td><td><strong>${m.accommodationOption} ${DASH} ${opt.hotel||''}${opt.type?' ('+opt.type+')':''}</strong></td></tr>
+      ${isRegOnly ? '' : `<tr><td style="color:#6b7280;">Accommodation</td><td>${fmt(accomM)}/mo &nbsp;&times;&nbsp; ${nMo} = <strong>${fmt(accomTotal)}</strong></td></tr>`}
+      <tr><td style="color:#6b7280;">Biennial Registration</td><td>${fmt(regM)}/mo &nbsp;&times;&nbsp; ${nMo} = <strong>${fmt(regTotal)}</strong></td></tr>
       <tr style="border-top:1px solid #e5e7eb;"><td style="color:#1a3a6b;font-weight:700;padding-top:6px;">Monthly Instalment</td><td style="font-weight:700;color:#1a3a6b;padding-top:6px;">${fmt(monthly)} per month</td></tr>
       <tr><td style="color:#1a3a6b;font-weight:700;">Total Commitment</td><td style="font-weight:800;color:#1a3a6b;">${fmt(totalCommit)} over ${nMo} months</td></tr>
       <tr><td style="color:#6b7280;">Payment Period</td><td>${periodLabel}</td></tr>
@@ -275,9 +278,9 @@ export function buildRegistrationConfirmationHTML(m){
     </table>
 
     <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px;padding:12px;margin:16px 0;">
-      <div style="font-weight:700;color:#1a3a6b;margin-bottom:6px;">ðŸ’³ BANKING DETAILS</div>
+      <div style="font-weight:700;color:#1a3a6b;margin-bottom:6px;">BANKING DETAILS</div>
       <table style="width:100%;font-size:13px;">
-        <tr><td style="color:#6b7280;width:160px;">Account Name</td><td>Biennial 2027 â€“ Lay Organization Stokvel Fund</td></tr>
+        <tr><td style="color:#6b7280;width:160px;">Account Name</td><td>Biennial 2027 ${DASH} Lay Organization Stokvel Fund</td></tr>
         <tr><td style="color:#6b7280;">Account No.</td><td style="font-weight:700;">63211345582</td></tr>
         <tr><td style="color:#6b7280;">Bank</td><td>First National Bank (FNB)</td></tr>
         <tr><td style="color:#6b7280;">Branch Code</td><td>250655</td></tr>
@@ -291,5 +294,5 @@ export function buildRegistrationConfirmationHTML(m){
       <p>Yours in service,<br/><strong>NEDLO Financial Secretary</strong><br/><a href="mailto:${FROM_EMAIL}">${FROM_EMAIL}</a></p>
     </div>
   </div>`;
+  return wrapDoc(body);
 }
-
