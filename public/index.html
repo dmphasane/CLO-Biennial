@@ -1940,15 +1940,26 @@ function importStatementRows(rows, filename){
       }
     }
     if(credit===0){
-      // Last resort: try any numeric column that isn't Balance or Service Fee
+      // Last resort: ONLY accept a column whose NAME clearly indicates a transaction
+      // amount (never a balance / running total / available / fee / debit column).
+      // Grabbing a balance column was inflating the total bank credits, so we are
+      // deliberately strict here and would rather flag the row for review below.
       const keys = Object.keys(row);
       for(const k of keys){
         const kl = k.toLowerCase();
-        if(kl.includes('balance') || kl.includes('fee') || kl.includes('cheque') || kl.includes('date')) continue;
+        // Reject anything that could be a balance or non-credit figure
+        if(kl.includes('balance') || kl.includes('available') || kl.includes('running') ||
+           kl.includes('total') || kl.includes('fee') || kl.includes('cheque') ||
+           kl.includes('date') || kl.includes('debit')) continue;
+        // Only accept columns explicitly about credit/amount/deposit/money-in
+        const looksLikeAmount = kl.includes('amount') || kl.includes('credit') ||
+                                kl.includes('deposit') || kl.includes('money in') || kl==='in';
+        if(!looksLikeAmount) continue;
         let rawVal = String(row[k]||'').trim();
         rawVal = rawVal.replace(/^R\s*/i,'').replace(/\s/g,'').replace(/,/g,'');
+        if(rawVal.startsWith('(') && rawVal.endsWith(')')) rawVal = '-'+rawVal.slice(1,-1);
         const parsed = parseFloat(rawVal);
-        if(!isNaN(parsed) && parsed > 100 && credit===0) { credit=parsed; break; } // likely a payment amount
+        if(!isNaN(parsed) && parsed > 0 && credit===0){ credit=parsed; break; }
       }
     }
     // Skip service fee rows and debit entries
@@ -1978,7 +1989,9 @@ function importStatementRows(rows, filename){
     // Also try the other field as a secondary match source
     const secondaryRef = ref ? desc : '';
     // ── Duplicate control: stable transaction fingerprint ──
-    const fp = txnFingerprint(txnDate, effectiveRef, desc, credit);
+    // Use the RAW reference and description separately so a transaction with a
+    // blank reference still de-dupes reliably on date + amount + description.
+    const fp = txnFingerprint(txnDate, ref, desc, credit);
     const isDuplicate = DB.entries.some(e=>{
       if(e.fingerprint) return e.fingerprint === fp;
       return txnFingerprint(e.txnDate, e.referenceRaw, e.description, e.creditAmount) === fp;
