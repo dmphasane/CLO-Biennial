@@ -137,7 +137,7 @@ select[multiple]{height:auto;min-height:80px;}
       </select>
     </div>
     <button class="btn btn-primary" style="width:100%;justify-content:center;padding:12px;" onclick="doLogin()">Sign In</button>
-    <p style="text-align:center;margin-top:14px;font-size:11px;color:var(--muted);">Protected under POPIA. Authorised personnel only. <strong>v2.4-build6</strong></p>
+    <p style="text-align:center;margin-top:14px;font-size:11px;color:var(--muted);">Protected under POPIA. Authorised personnel only. <strong>v2.5-build7</strong></p>
   </div>
 </div>
 
@@ -201,6 +201,7 @@ select[multiple]{height:auto;min-height:80px;}
           <button class="btn btn-outline btn-sm" onclick="importMembersCSV()">📥 Import CSV</button>
           <button class="btn btn-outline btn-sm" onclick="exportMembersCSV()">📤 Export CSV</button>
           <button class="btn btn-outline btn-sm" onclick="flagLegacyMembers()" title="Mark members registered before 1 Oct 2026 as the legacy (Jun–May 12-month) cohort">🏷 Flag Legacy</button>
+          <button class="btn btn-warning btn-sm" onclick="findDuplicateMembers()" title="Scan the register for likely duplicate members (same person under different names)">🔍 Find Duplicate Members</button>
           <button class="btn btn-primary btn-sm" onclick="openMemberModal()">+ Add Member</button>
         </div>
       </div>
@@ -601,6 +602,18 @@ select[multiple]{height:auto;min-height:80px;}
   </div>
 </div>
 
+<!-- ════ DUPLICATE MEMBERS FINDER MODAL ════ -->
+<div id="dup-members-modal" class="modal-backdrop" style="display:none">
+  <div class="modal" style="width:860px;max-width:98vw;">
+    <div class="flex justify-between items-center mb-2">
+      <div class="modal-title" style="margin-bottom:0;">🔍 Possible Duplicate Members</div>
+      <button class="btn btn-outline btn-sm" onclick="document.getElementById('dup-members-modal').style.display='none'">✕ Close</button>
+    </div>
+    <div class="alert alert-info" style="font-size:12px;">These members look like they could be the same person entered more than once (similar names in the same conference, initial vs full name, or swapped first/last name). Review each group and merge any true duplicates so a payment isn't split across two records.</div>
+    <div id="dup-members-body" style="max-height:60vh;overflow-y:auto;"></div>
+  </div>
+</div>
+
 <!-- ════ MEMBER LEDGER MODAL ════ -->
 <div id="ledger-modal" class="modal-backdrop" style="display:none">
   <div class="modal" style="width:860px;max-width:98vw;">
@@ -858,13 +871,12 @@ function parseDate(str){
       if(!isNaN(d)) return d;
     }
   }
-  // 2) DD/MM/YYYY or DD-MM-YYYY (South African format) — parse EXPLICITLY.
+  // 2) DD/MM/YYYY or DD-MM-YYYY (South African format) - parse EXPLICITLY.
   //    Do NOT use new Date() here: it would read 11/09/2026 as US MM/DD and give
   //    the wrong date, which breaks duplicate detection across statement exports.
   p = s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})$/);
   if(p){
     let day=+p[1], month=+p[2]; const year=+p[3];
-    // If the first number can't be a day but could be a month, swap (defensive).
     if(day>12 && month<=12){ /* clearly DD/MM */ }
     else if(month>12 && day<=12){ const t=day; day=month; month=t; } // was MM/DD
     if(month>=1 && month<=12 && day>=1 && day<=31){
@@ -872,12 +884,12 @@ function parseDate(str){
       if(!isNaN(d)) return d;
     }
   }
-  // 3) Textual dates like "25 Jun 2026" / "25 June 2026" / "Jun 25, 2026"
+  // 3) Textual dates like "25 Jun 2026" / "25 June 2026"
   if(/[A-Za-z]/.test(s)){
     d = new Date(s);
     if(!isNaN(d) && d.getFullYear()>2000) return d;
   }
-  // 4) Last resort: let the engine try (ISO 8601 only is safe here)
+  // 4) Last resort: ISO 8601 only (safe, unambiguous)
   if(/^\d{4}-\d{2}-\d{2}/.test(s)){
     d = new Date(s);
     if(!isNaN(d) && d.getFullYear()>2000) return d;
@@ -1251,6 +1263,101 @@ function unlinkEntryFromMember(entryId, memberId){
   // Refresh the open ledger modal and the rest of the UI
   renderLedgerBody(m);
   renderAll();
+}
+
+// ── Find likely duplicate members in the register ──
+// Heuristics (all within the SAME conference):
+//   - same surname + same first initial  (D Mphasane  vs  Dumisani Mphasane)
+//   - same surname + first names where one is a prefix of the other
+//   - swapped order (first/last) producing the same name set
+//   - identical normalized full name
+function findDuplicateMembers(){
+  const members = DB.members.slice();
+  // Build a signature per member from their name tokens
+  function tokens(m){
+    return normalize(m.fullName||'').split(' ').filter(Boolean);
+  }
+  const groups = [];
+  const used = new Set();
+
+  function paidTotal(m){
+    return DB.entries.filter(e=>e.linkedMemberId===m.id && e.matchStatus==='MATCHED').reduce((s,e)=>s+e.creditAmount,0);
+  }
+
+  for(let i=0;i<members.length;i++){
+    if(used.has(members[i].id)) continue;
+    const a = members[i]; const ta = tokens(a);
+    if(!ta.length) continue;
+    const surnameA = ta[ta.length-1];
+    const firstA = ta[0];
+    const group = [a];
+    for(let j=i+1;j<members.length;j++){
+      if(used.has(members[j].id)) continue;
+      const b = members[j]; const tb = tokens(b);
+      if(!tb.length) continue;
+      // Only compare within the same conference (duplicates share a conference)
+      if(a.conferenceCode !== b.conferenceCode) continue;
+      const surnameB = tb[tb.length-1];
+      const firstB = tb[0];
+      let dup = false;
+      // identical full name (ignoring spacing/case)
+      if(ta.join(' ')===tb.join(' ')) dup = true;
+      // same surname AND (same first initial OR one first name is a prefix of the other)
+      else if(surnameA===surnameB){
+        if(firstA[0]===firstB[0]) dup = true;
+        else if(firstA.startsWith(firstB) || firstB.startsWith(firstA)) dup = true;
+      }
+      // swapped order: same set of tokens
+      else {
+        const setA=[...ta].sort().join(' '); const setB=[...tb].sort().join(' ');
+        if(setA===setB) dup = true;
+        // surname matches the other's first name and vice-versa (name order swapped)
+        else if(surnameA===firstB && firstA===surnameB) dup = true;
+      }
+      if(dup){ group.push(b); used.add(b.id); }
+    }
+    if(group.length>1){ used.add(a.id); groups.push(group); }
+  }
+
+  const body = document.getElementById('dup-members-body');
+  if(!groups.length){
+    body.innerHTML = '<p style="padding:16px;color:var(--success);">✅ No likely duplicate members found in the register.</p>';
+    document.getElementById('dup-members-modal').style.display='flex';
+    return;
+  }
+  let html = `<div class="alert alert-warn" style="font-size:12px;">Found <strong>${groups.length}</strong> group(s) of possible duplicates. Compare the payment references and amounts paid, then merge the records that are the same person.</div>`;
+  groups.forEach((grp,gi)=>{
+    html += `<div style="border:1px solid var(--border);border-radius:8px;padding:10px;margin-bottom:12px;">
+      <div style="font-weight:700;color:var(--primary);margin-bottom:6px;">Group ${gi+1} &ndash; ${grp[0].conferenceCode}</div>
+      <table style="width:100%;font-size:12px;"><thead><tr>
+        <th style="text-align:left;padding:4px;">Full Name</th>
+        <th style="text-align:left;padding:4px;">Reference</th>
+        <th style="text-align:left;padding:4px;">Option</th>
+        <th style="text-align:right;padding:4px;">Paid</th>
+        <th style="text-align:left;padding:4px;">Email</th>
+        <th style="padding:4px;">Merge</th>
+      </tr></thead><tbody>`;
+    grp.forEach(m=>{
+      html += `<tr style="border-bottom:1px solid #eee;">
+        <td style="padding:4px;font-weight:600;">${m.fullName}</td>
+        <td style="padding:4px;font-size:11px;">${m.paymentRef}</td>
+        <td style="padding:4px;">${m.accommodationOption}</td>
+        <td style="padding:4px;text-align:right;color:var(--success);">${fmt(paidTotal(m))}</td>
+        <td style="padding:4px;font-size:11px;">${m.email||'&mdash;'}</td>
+        <td style="padding:4px;"><button class="btn btn-warning btn-sm" onclick="startMergeFromDup('${m.id}')">Keep this &amp; merge others</button></td>
+      </tr>`;
+    });
+    html += `</tbody></table>
+      <div style="font-size:11px;color:var(--muted);margin-top:4px;">Click "Keep this &amp; merge others" on the record you want to KEEP; you'll then pick which duplicate to merge into it.</div>
+    </div>`;
+  });
+  body.innerHTML = html;
+  document.getElementById('dup-members-modal').style.display='flex';
+}
+// Open the existing merge modal with the chosen member as the primary (keep)
+function startMergeFromDup(memberId){
+  document.getElementById('dup-members-modal').style.display='none';
+  startMerge(memberId);
 }
 
 let mergePrimaryId = null;
