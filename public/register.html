@@ -126,7 +126,7 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--muted);}
       <div style="text-align:center;padding:20px;">
         <div style="font-size:48px;margin-bottom:12px;">✅</div>
         <h2 style="color:var(--primary);margin-bottom:8px;">Registration Successful!</h2>
-        <p style="color:var(--muted);margin-bottom:16px;">Your registration has been recorded. Please use the banking details below to make your first payment.</p>
+        <p style="color:var(--muted);margin-bottom:16px;">Your registration has been recorded. A confirmation email with your option, payment schedule and banking details has been sent to your email address. Please use the banking details below to make your first payment.</p>
       </div>
       <div id="success-summary"></div>
       <div style="margin-top:16px;">
@@ -184,11 +184,20 @@ const EXISTING_HOTEL_KEYS = ['OPT-1','OPT-2','OPT-3','OPT-4','OPT-5','OPT-6'];
 function optIcon(o){ return o.regOnly?'📋':o.hotel.includes('Capital')?'🏨':o.hotel.includes('Catalyst')?'🏢':o.hotel.includes('Sun')?'☀️':o.hotel.includes('Tower')?'🏨':'🌿'; }
 function optPeriod(o){ return o.regOnly?'Oct–Dec 2026 (3 months)':'Oct 2026–May 2027 (8 months)'; }
 function optCard(key,o){
+  const totalCommit = r2(o.total*o.months);
+  const durationNote = o.regOnly
+    ? `${o.months} monthly payments of ${fmt(o.total)} (Oct–Dec 2026)`
+    : `${o.months} monthly payments of ${fmt(o.total)} (Oct 2026 – May 2027)`;
   return `<div class="option-card" id="opt-${key}" onclick="selectOption('${key}')">
     <div class="hotel">${optIcon(o)} ${o.hotel}</div>
     <div class="type">${o.type}</div>
     <div class="price">${fmt(o.total)}/mo</div>
-    <div style="font-size:11px;color:var(--muted);margin-top:4px;">${o.regOnly?'Registration only':'Accom: '+fmt(o.accom)+' + Reg: '+fmt(o.reg)} · ${optPeriod(o)}</div>
+    <div style="font-size:11px;color:var(--muted);margin-top:4px;">${o.regOnly?'Registration only':'Accom: '+fmt(o.accom)+'/mo + Reg: '+fmt(o.reg)+'/mo'}</div>
+    <div style="font-size:11.5px;color:var(--primary);font-weight:600;margin-top:6px;padding-top:6px;border-top:1px dashed #e5e7eb;">
+      💰 Total commitment: ${fmt(totalCommit)}
+      ${o.regOnly?'':`<span style="color:var(--muted);font-weight:400;"> (Accommodation ${fmt(r2(o.accom*o.months))} + Registration ${fmt(REG_TOTAL)})</span>`}
+    </div>
+    <div style="font-size:11px;color:var(--muted);margin-top:2px;">📅 ${durationNote}</div>
   </div>`;
 }
 const list = document.getElementById('options-list');
@@ -271,17 +280,15 @@ async function submitRegistration(){
     }
     if(!res.ok){ throw new Error('Server error'); }
   }catch(e){
-    // Fallback: save to localStorage so nothing is lost
-    let DB;
-    try{ DB=JSON.parse(localStorage.getItem('nedlo_db'))||{members:[],entries:[],auditLog:[],refAliases:{}}; }
-    catch(_){ DB={members:[],entries:[],auditLog:[],refAliases:{}}; }
-    if(!DB.members.find(m=>m.paymentRef===ref)){ DB.members.push(member); localStorage.setItem('nedlo_db',JSON.stringify(DB)); }
+    // Registration must reach the server (so it writes to the portal and the
+    // confirmation email can be sent). Show an error and let the user retry.
+    errEl.textContent='Could not reach the server. Please check your connection and try again.';
+    errEl.classList.remove('hidden');
+    if(btn){ btn.disabled=false; btn.textContent='Submit Registration'; }
+    return;
   }
 
-  // Also send email to Financial Secretary
-  sendRegistrationEmail(member);
-
-  // Show success
+  // Show success (the server records the member and emails a confirmation)
   document.getElementById('reg-form').classList.add('hidden');
   document.getElementById('reg-success').classList.remove('hidden');
   document.getElementById('success-summary').innerHTML=`
@@ -291,6 +298,7 @@ async function submitRegistration(){
         <tr><td>Conference</td><td class="val">${conf}</td></tr>
         <tr><td>Option</td><td class="val">${selectedOpt} – ${o.hotel+' ('+o.type+')'}</td></tr>
         <tr><td>Monthly Payment</td><td class="val">${fmt(o.total)}</td></tr>
+        <tr><td>Total Commitment</td><td class="val" style="font-weight:700;">${fmt(r2(o.total*o.months))} (${o.months} months)</td></tr>
         <tr><td>Payment Reference</td><td class="val" style="color:var(--primary);font-size:15px;">${ref}</td></tr>
       </table>
     </div>
@@ -306,24 +314,6 @@ async function submitRegistration(){
     </div>`;
 }
 
-function sendRegistrationEmail(member){
-  const o=OPTIONS[member.accommodationOption];
-  const subject=encodeURIComponent('NEDLO Stokvel Registration – '+member.fullName);
-  const body=encodeURIComponent(
-    'NEW REGISTRATION\n\n'+
-    'Name: '+member.fullName+'\n'+
-    'Conference: '+member.conferenceCode+'\n'+
-    'Church: '+(member.localChurch||'—')+'\n'+
-    'Email: '+member.email+'\n'+
-    'Phone: '+member.phone+'\n'+
-    'Option: '+member.accommodationOption+' – '+o.hotel+' '+o.type+'\n'+
-    'Monthly: '+fmt(o.total)+'\n'+
-    'Reference: '+member.paymentRef+'\n'+
-    'Date: '+member.registrationDate+'\n'
-  );
-  // Open mailto silently (if it fails, registration is still saved locally)
-  try{ window.open('mailto:nedloregistration@gmail.com?subject='+subject+'&body='+body,'_blank'); } catch(e){}
-}
 </script>
 </body>
 </html>

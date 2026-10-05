@@ -90,14 +90,14 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--muted);}
       </div>
     </div>
     <div id="reg-error" class="alert alert-error hidden"></div>
-    <button class="btn btn-primary" onclick="submitReg()">Submit Registration via Email</button>
+    <button class="btn btn-primary" onclick="submitReg()">Submit Registration</button>
   </div>
   <div id="reg-success" class="hidden">
     <div class="card" style="text-align:center;padding:30px;">
       <div style="font-size:48px;">✅</div>
-      <h2 style="color:var(--primary);margin:12px 0;">Registration Submitted!</h2>
-      <p>Your email app should have opened with your registration details. Please send the email to complete your registration.</p>
-      <p style="margin-top:12px;font-size:13px;color:var(--muted);">Save this page or take a screenshot of your banking details and reference number.</p>
+      <h2 style="color:var(--primary);margin:12px 0;">Registration Successful!</h2>
+      <p>Your registration has been recorded. A confirmation email with your option, payment schedule and banking details has been sent to your email address.</p>
+      <p style="margin-top:12px;font-size:13px;color:var(--muted);">Please use your reference below for every payment.</p>
       <div id="success-details" style="text-align:left;margin-top:16px;"></div>
     </div>
   </div>
@@ -125,29 +125,52 @@ let sel=null;
 function fmt(n){return'R'+Number(n).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g,',');}
 function rIcon(o){return o.regOnly?'📋':o.hotel.includes('Capital')?'🏨':o.hotel.includes('Catalyst')?'🏢':o.hotel.includes('Sun')?'☀️':o.hotel.includes('Tower')?'🏨':'🌿';}
 const list=document.getElementById('options-list');
+function rCard(k,o){
+  const totalCommit=r2(o.total*o.months);
+  const dur=o.regOnly?o.months+' payments of '+fmt(o.total)+' (Oct–Dec 2026)':o.months+' payments of '+fmt(o.total)+' (Oct 2026 – May 2027)';
+  const split=o.regOnly?'':`<span style="color:var(--muted);font-weight:400;"> (Accom ${fmt(r2(o.accom*o.months))} + Reg ${fmt(REG_TOTAL)})</span>`;
+  return `<div class="option-card" id="o-${k}" onclick="pick('${k}')">
+    <div class="hotel">${rIcon(o)} ${o.hotel}</div><div class="type">${o.type}</div><div class="price">${fmt(o.total)}/mo</div>
+    <div style="font-size:11.5px;color:var(--primary);font-weight:600;margin-top:6px;padding-top:6px;border-top:1px dashed #e5e7eb;">💰 Total: ${fmt(totalCommit)}${split}</div>
+    <div style="font-size:11px;color:var(--muted);margin-top:2px;">📅 ${dur}</div>
+  </div>`;
+}
 let rHtml='<div style="font-size:12px;font-weight:700;color:var(--primary);margin:4px 0 8px;">New Options</div>';
-Object.entries(OPTIONS).forEach(([k,o])=>{ if(!EXISTING_HOTEL_KEYS.includes(k)) rHtml+=`<div class="option-card" id="o-${k}" onclick="pick('${k}')"><div class="hotel">${rIcon(o)} ${o.hotel}</div><div class="type">${o.type}</div><div class="price">${fmt(o.total)}/mo</div></div>`; });
+Object.entries(OPTIONS).forEach(([k,o])=>{ if(!EXISTING_HOTEL_KEYS.includes(k)) rHtml+=rCard(k,o); });
 rHtml+='<div style="font-size:12px;font-weight:700;color:var(--primary);margin:16px 0 8px;">Existing Hotels (over 8 months)</div>';
-EXISTING_HOTEL_KEYS.forEach(k=>{const o=OPTIONS[k];rHtml+=`<div class="option-card" id="o-${k}" onclick="pick('${k}')"><div class="hotel">${rIcon(o)} ${o.hotel}</div><div class="type">${o.type}</div><div class="price">${fmt(o.total)}/mo</div></div>`;});
+EXISTING_HOTEL_KEYS.forEach(k=>{rHtml+=rCard(k,OPTIONS[k]);});
 list.innerHTML=rHtml;
 function pick(k){sel=k;document.querySelectorAll('.option-card').forEach(c=>c.classList.remove('selected'));document.getElementById('o-'+k).classList.add('selected');const o=OPTIONS[k];document.getElementById('summary-section').classList.remove('hidden');document.getElementById('s-option').textContent=k;document.getElementById('s-hotel').textContent=o.hotel+' – '+o.type;document.getElementById('s-total').textContent=fmt(o.total);document.getElementById('s-total12').textContent=fmt(o.total*o.months)+' ('+o.months+' mo)';const n=document.getElementById('r-name').value.trim(),c=document.getElementById('r-conf').value;document.getElementById('s-ref').textContent=(c&&n)?(c+'-'+n).toUpperCase():'[Enter name & conference above]';}
 ['r-name','r-conf'].forEach(id=>document.getElementById(id).addEventListener('input',()=>{if(sel)pick(sel);}));
-function submitReg(){
+const SCHED_NEW=['2026-10','2026-11','2026-12','2027-01','2027-02','2027-03','2027-04','2027-05'];
+const SCHED_REGONLY=['2026-10','2026-11','2026-12'];
+async function submitReg(){
   const n=document.getElementById('r-name').value.trim(),c=document.getElementById('r-conf').value,ch=document.getElementById('r-church').value.trim(),e=document.getElementById('r-email').value.trim(),p=document.getElementById('r-phone').value.trim();
   const err=document.getElementById('reg-error');err.classList.add('hidden');
   if(!n||!c||!e||!p||!sel){err.textContent='Please complete all required fields and select an option.';err.classList.remove('hidden');return;}
   const o=OPTIONS[sel],ref=(c+'-'+n).toUpperCase().replace(/\s+/g,' ').trim();
-  const subject=encodeURIComponent('NEDLO Stokvel Registration – '+n);
-  const body=encodeURIComponent('NEDLO BIENNIAL 2027 STOKVEL FUND – NEW REGISTRATION\n\n'+
-    'Full Name: '+n+'\nConference: '+c+'\nLocal Church: '+(ch||'—')+'\nEmail: '+e+'\nPhone: '+p+'\n'+
-    'Option: '+sel+' – '+o.hotel+' '+o.type+'\n'+
-    'Monthly: '+fmt(o.total)+'\nTotal ('+o.months+'mo): '+fmt(o.total*o.months)+'\n'+
-    'Payment Reference: '+ref+'\nDate: '+new Date().toLocaleDateString('en-ZA')+'\n\n'+
-    'Please add me to the Stokvel Fund register.\n\nRegards,\n'+n);
-  window.location.href='mailto:nedloregistration@gmail.com?cc='+encodeURIComponent(e)+'&subject='+subject+'&body='+body;
+  const member={
+    fullName:n, conferenceCode:c, localChurch:ch, email:e, phone:p,
+    accommodationOption:sel, expectedMonthlyTotal:o.total, expectedAccom:o.accom, expectedReg:o.reg,
+    paymentRef:ref, registrationDate:new Date().toISOString().split('T')[0], cohort:'new'
+  };
+  const MONTHS=o.regOnly?SCHED_REGONLY:SCHED_NEW;
+  member.id='ID-'+Math.random().toString(36).substr(2,9).toUpperCase();
+  member.ledger={};
+  MONTHS.forEach(mk=>{member.ledger[mk]={status:'NOT_PAID',entryId:null,received:0,accom:0,reg:0};});
+  const btn=document.querySelector('.btn-primary');
+  if(btn){btn.disabled=true;btn.textContent='Submitting…';}
+  try{
+    const res=await fetch('/api/register',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(member)});
+    if(res.status===409){err.textContent='A registration with this reference ('+ref+') already exists. If this is an error, contact the Financial Secretary.';err.classList.remove('hidden');if(btn){btn.disabled=false;btn.textContent='Submit Registration';}return;}
+    if(!res.ok){throw new Error('Server error');}
+  }catch(ex){
+    err.textContent='Could not reach the server. Please check your connection and try again.';err.classList.remove('hidden');
+    if(btn){btn.disabled=false;btn.textContent='Submit Registration';}return;
+  }
   document.getElementById('reg-form').classList.add('hidden');
   document.getElementById('reg-success').classList.remove('hidden');
-  document.getElementById('success-details').innerHTML=`<div class="bank-box"><table><tr><td class="lbl">Your Reference</td><td style="font-weight:800;color:var(--primary);font-size:16px;">${ref}</td></tr><tr><td class="lbl">Account</td><td>63211345582 (FNB)</td></tr><tr><td class="lbl">Branch</td><td>250655</td></tr></table></div>`;
+  document.getElementById('success-details').innerHTML=`<div class="bank-box"><table><tr><td class="lbl">Option</td><td>${sel} – ${o.hotel} (${o.type})</td></tr><tr><td class="lbl">Monthly</td><td>${fmt(o.total)} × ${o.months} mo</td></tr><tr><td class="lbl">Total Commitment</td><td style="font-weight:700;">${fmt(r2(o.total*o.months))}</td></tr><tr><td class="lbl">Your Reference</td><td style="font-weight:800;color:var(--primary);font-size:16px;">${ref}</td></tr><tr><td class="lbl">Account</td><td>63211345582 (FNB)</td></tr><tr><td class="lbl">Branch</td><td>250655</td></tr></table></div>`;
 }
 </script>
 </body>
