@@ -9,7 +9,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
 import { pool, query } from './db.js';
-import { makeTransport, buildStatementHTML, buildRegistrationConfirmationHTML } from './email.js';
+import { makeTransport, sendEmail, buildStatementHTML, buildRegistrationConfirmationHTML } from './email.js';
 
 dotenv.config();
 
@@ -119,29 +119,19 @@ app.post('/api/debug/reseed', async (req, res)=>{
 // Usage: GET /api/debug/email-test?to=someone@example.com
 app.get('/api/debug/email-test', async (req, res)=>{
   const to = req.query.to;
-  const hasUser = !!process.env.GMAIL_USER;
-  const hasPass = !!process.env.GMAIL_APP_PASSWORD;
-  const passLen = (process.env.GMAIL_APP_PASSWORD||'').length;
-  const passHasSpaces = /\s/.test(process.env.GMAIL_APP_PASSWORD||'');
-  const info = { gmailUserSet:hasUser, gmailUser:process.env.GMAIL_USER||null, appPasswordSet:hasPass, appPasswordLength:passLen, appPasswordHasSpaces:passHasSpaces };
-  if(!hasUser || !hasPass){ return res.status(400).json({ ok:false, reason:'Gmail env vars missing', ...info }); }
-  try{
-    const transport = makeTransport();
-    await transport.verify(); // checks credentials/connection without sending
-    let sent = false;
-    if(to){
-      await transport.sendMail({
-        from: `"NEDLO Biennial 2027" <${process.env.GMAIL_USER}>`,
-        to,
-        subject: 'NEDLO email test',
-        text: 'This is a test email from the NEDLO Stokvel server. If you received this, Gmail sending works.',
-      });
-      sent = true;
-    }
-    res.json({ ok:true, verified:true, testEmailSent:sent, sentTo:to||null, ...info });
-  }catch(e){
-    res.status(500).json({ ok:false, verified:false, error:String(e.message||e), code:e.code||'', ...info });
-  }
+  const info = {
+    provider: process.env.BREVO_API_KEY ? 'brevo' : (process.env.GMAIL_APP_PASSWORD ? 'smtp' : 'none'),
+    brevoKeySet: !!process.env.BREVO_API_KEY,
+    senderEmail: process.env.GMAIL_USER || 'nedloregistration@gmail.com',
+  };
+  if(!to){ return res.json({ ok:true, note:'Add ?to=you@example.com to send a test email', ...info }); }
+  const result = await sendEmail({
+    to,
+    subject: 'NEDLO email test',
+    text: 'This is a test email from the NEDLO Stokvel server. If you received this, email sending works.',
+    html: '<p>This is a test email from the <strong>NEDLO Stokvel server</strong>. If you received this, email sending works.</p>',
+  });
+  res.status(result.ok?200:500).json({ ...result, sentTo:to, ...info });
 });
 
 // ─── MEMBERS ───
@@ -245,21 +235,18 @@ app.post('/api/register', regLimiter, async (req, res)=>{
   );
   await logAudit({ name:'Self-Registration', role:'Member' }, 'Register', m.paymentRef);
   // Send confirmation email to the registrant (non-blocking — never fail the
-  // registration if email cannot be sent, e.g. Gmail env vars not configured).
-  if(m.email && process.env.GMAIL_APP_PASSWORD){
+  // registration if email cannot be sent, e.g. no provider configured).
+  if(m.email){
     (async ()=>{
-      try{
-        const html = buildRegistrationConfirmationHTML(m);
-        const transport = makeTransport();
-        await transport.sendMail({
-          from: `"NEDLO Biennial 2027" <${process.env.GMAIL_USER||'nedloregistration@gmail.com'}>`,
-          to: m.email,
-          cc: process.env.GMAIL_USER || 'nedloregistration@gmail.com', // notify the office
-          subject: `NEDLO Biennial 2027 – Registration Confirmation (${m.paymentRef})`,
-          html,
-        });
-        await logAudit({ name:'System', role:'' }, 'RegistrationEmail', `Confirmation sent to ${m.fullName} (${m.email})`);
-      }catch(err){ console.error('Registration confirmation email failed:', err.message); }
+      const html = buildRegistrationConfirmationHTML(m);
+      const r = await sendEmail({
+        to: m.email,
+        cc: process.env.GMAIL_USER || 'nedloregistration@gmail.com', // notify the office
+        subject: `NEDLO Biennial 2027 – Registration Confirmation (${m.paymentRef})`,
+        html,
+      });
+      if(r.ok){ await logAudit({ name:'System', role:'' }, 'RegistrationEmail', `Confirmation sent to ${m.fullName} (${m.email}) via ${r.provider}`); }
+      else { console.error('Registration confirmation email failed:', r.error); }
     })();
   }
   res.json({ ok:true });
@@ -301,14 +288,13 @@ app.post('/api/send-statement', authRequired, async (req, res)=>{
     const er = await query('SELECT * FROM entries WHERE linked_member_id=$1', [memberId]);
     const entries = er.rows.map(rowToEntry);
     const html = buildStatementHTML(m, entries, settings||{});
-    const transport = makeTransport();
-    await transport.sendMail({
-      from: `"NEDLO Biennial 2027" <${process.env.GMAIL_USER||'nedloregistration@gmail.com'}>`,
+    const r = await sendEmail({
       to: m.email,
       subject: `NEDLO Biennial 2027 Stokvel Fund – Contribution Statement for ${m.fullName}`,
       html,
     });
-    await logAudit(req.user, 'EmailSent', `Statement emailed to ${m.fullName} (${m.email})`);
+    if(!r.ok) return res.status(500).json({ error:`Email failed (${r.provider}): ${r.error}` });
+    await logAudit(req.user, 'EmailSent', `Statement emailed to ${m.fullName} (${m.email}) via ${r.provider}`);
     res.json({ ok:true });
   }catch(e){ console.error('send-statement error:', e.message); res.status(500).json({ error:e.message }); }
 });
@@ -317,7 +303,6 @@ app.post('/api/send-statement', authRequired, async (req, res)=>{
 app.post('/api/send-bulk', authRequired, async (req, res)=>{
   const { memberIds, settings } = req.body;
   if(!Array.isArray(memberIds) || !memberIds.length) return res.status(400).json({ error:'No members selected' });
-  const transport = makeTransport();
   let sent=0, skipped=0, failed=[];
   for(const id of memberIds){
     try{
@@ -328,14 +313,13 @@ app.post('/api/send-bulk', authRequired, async (req, res)=>{
       const er = await query('SELECT * FROM entries WHERE linked_member_id=$1', [id]);
       const entries = er.rows.map(rowToEntry);
       const html = buildStatementHTML(m, entries, settings||{});
-      await transport.sendMail({
-        from: `"NEDLO Biennial 2027" <${process.env.GMAIL_USER||'nedloregistration@gmail.com'}>`,
+      const r = await sendEmail({
         to: m.email,
         subject: `NEDLO Biennial 2027 Stokvel Fund – Contribution Statement for ${m.fullName}`,
         html,
       });
-      sent++;
-      await new Promise(r=>setTimeout(r, 400)); // gentle pacing for Gmail
+      if(r.ok) sent++; else { failed.push(id); console.error('bulk send fail', id, r.error); }
+      await new Promise(res=>setTimeout(res, 300)); // gentle pacing
     }catch(e){ failed.push(id); console.error('bulk send fail', id, e.message); }
   }
   await logAudit(req.user, 'BulkEmail', `Bulk emailed ${sent} statements (${skipped} skipped, ${failed.length} failed)`);

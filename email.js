@@ -3,6 +3,54 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 const FROM_EMAIL = process.env.GMAIL_USER || 'nedloregistration@gmail.com';
+const FROM_NAME  = 'NEDLO Biennial 2027';
+
+// ─── Unified email sender ───
+// Primary path: Brevo HTTP API (works on Render — uses HTTPS/443, no SMTP ports).
+// Fallback: Gmail SMTP via nodemailer (only works where SMTP ports are open).
+// Returns { ok, provider, id?, error? } and never throws.
+export async function sendEmail({ to, subject, html, text, cc }){
+  const brevoKey = process.env.BREVO_API_KEY;
+  // ---- Brevo HTTP API ----
+  if(brevoKey){
+    try{
+      const payload = {
+        sender: { email: FROM_EMAIL, name: FROM_NAME },
+        to: [{ email: to }],
+        subject,
+        htmlContent: html || undefined,
+        textContent: text || undefined,
+      };
+      if(cc) payload.cc = (Array.isArray(cc)?cc:[cc]).map(e=>({ email:e }));
+      const resp = await fetch('https://api.brevo.com/v3/smtp/email', {
+        method:'POST',
+        headers:{ 'api-key': brevoKey, 'Content-Type':'application/json', 'Accept':'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if(resp.ok){
+        const data = await resp.json().catch(()=>({}));
+        return { ok:true, provider:'brevo', id:data.messageId||null };
+      }
+      const errText = await resp.text().catch(()=> '');
+      return { ok:false, provider:'brevo', error:`HTTP ${resp.status}: ${errText.slice(0,300)}` };
+    }catch(e){
+      return { ok:false, provider:'brevo', error:String(e.message||e) };
+    }
+  }
+  // ---- Fallback: Gmail SMTP ----
+  if(process.env.GMAIL_APP_PASSWORD){
+    try{
+      const transport = makeTransport();
+      const info = await transport.sendMail({
+        from: `"${FROM_NAME}" <${FROM_EMAIL}>`, to, cc, subject, html, text,
+      });
+      return { ok:true, provider:'smtp', id:info.messageId||null };
+    }catch(e){
+      return { ok:false, provider:'smtp', error:String(e.message||e) };
+    }
+  }
+  return { ok:false, provider:'none', error:'No email provider configured (set BREVO_API_KEY)' };
+}
 
 // Gmail transport using an App Password (never the account password).
 // NOTE: Render blocks the default SMTP ports (465/587) which causes ETIMEDOUT.
