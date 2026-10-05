@@ -137,7 +137,7 @@ select[multiple]{height:auto;min-height:80px;}
       </select>
     </div>
     <button class="btn btn-primary" style="width:100%;justify-content:center;padding:12px;" onclick="doLogin()">Sign In</button>
-    <p style="text-align:center;margin-top:14px;font-size:11px;color:var(--muted);">Protected under POPIA. Authorised personnel only. <strong>v2.5-build7</strong></p>
+    <p style="text-align:center;margin-top:14px;font-size:11px;color:var(--muted);">Protected under POPIA. Authorised personnel only. <strong>v2.6-build8</strong></p>
   </div>
 </div>
 
@@ -2324,22 +2324,39 @@ function matchEntry(entry){
     // No conference prefix detected - try matching against ALL members by name
     // Handles cases like "MOKONE .J SERONGOANE" (church name + initial + surname)
     const allTokens = refClean.replace(/\./g,' ').replace(/\s+/g,' ').trim().split(' ').filter(t=>t);
-    let bestScore=0, bestMember=null;
+    let bestScore=0, secondScore=0, bestMember=null;
     for(const m of DB.members){
       const mParts = m.fullName.toUpperCase().replace(/\./g,' ').replace(/\s+/g,' ').trim().split(' ').filter(t=>t);
       const surname = mParts[mParts.length-1];
-      const initials = mParts.slice(0,-1).map(p=>p[0]);
+      const firstNames = mParts.slice(0,-1);              // all given names
+      const initials = firstNames.map(p=>p[0]);
       let score=0;
       if(allTokens.includes(surname)) score+=60;
       else if(allTokens.find(t=>t.length>=4 && (surname.startsWith(t)||t.startsWith(surname)))) score+=40;
       else continue;
-      const tokInitials = allTokens.filter(t=>t.length<=2 && t!==surname);
-      if(tokInitials.length>0 && initials.length>0){
-        if(tokInitials.some(ri=>initials.some(mi=>ri[0]===mi))) score+=20;
+      // Reward matching a FULL first name (e.g. "WINNIE MASUKU") strongly, so the
+      // correct person is chosen when several members share a surname.
+      const otherTokens = allTokens.filter(t=>t!==surname);
+      let fullNameHit = false;
+      for(const t of otherTokens){
+        if(t.length>=3 && firstNames.some(fn=>fn===t)){ score+=35; fullNameHit=true; }
+        else if(t.length>=4 && firstNames.some(fn=>fn.startsWith(t)||t.startsWith(fn))){ score+=25; fullNameHit=true; }
       }
-      if(score>bestScore){ bestScore=score; bestMember=m; }
+      // Initial match (e.g. "W MASUKU") — only if we didn't already match a full name
+      if(!fullNameHit){
+        const tokInitials = otherTokens.filter(t=>t.length<=2);
+        if(tokInitials.length>0 && initials.length>0){
+          if(tokInitials.some(ri=>initials.some(mi=>ri[0]===mi))) score+=20;
+        }
+      }
+      if(score>bestScore){ secondScore=bestScore; bestScore=score; bestMember=m; }
+      else if(score>secondScore){ secondScore=score; }
     }
-    if(bestMember && bestScore>=60){
+    // If the best match is only a surname hit (60) AND another member ties on
+    // that surname, it's ambiguous (e.g. two people with the same surname and no
+    // first name/initial on the payment) — leave it for manual resolution.
+    const ambiguous = bestScore===60 && secondScore===60;
+    if(bestMember && bestScore>=60 && !ambiguous){
       confMatch=bestMember.conferenceCode; nameBody=refClean.replace(/\./g,' ').replace(/\s+/g,' ').trim();
       member_override=bestMember;
     } else {
