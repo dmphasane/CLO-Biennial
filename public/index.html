@@ -6,7 +6,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<title>NEDLO Biennial 2027 – Stokvel Fund Reconciliation Tool v2.1</title>
+<title>NEDLO Biennial 2027 – Stokvel Fund Reconciliation Tool v2.2</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -137,7 +137,7 @@ select[multiple]{height:auto;min-height:80px;}
       </select>
     </div>
     <button class="btn btn-primary" style="width:100%;justify-content:center;padding:12px;" onclick="doLogin()">Sign In</button>
-    <p style="text-align:center;margin-top:14px;font-size:11px;color:var(--muted);">Protected under POPIA. Authorised personnel only. <strong>v2.1-build3</strong></p>
+    <p style="text-align:center;margin-top:14px;font-size:11px;color:var(--muted);">Protected under POPIA. Authorised personnel only. <strong>v2.2-build4</strong></p>
   </div>
 </div>
 
@@ -3882,7 +3882,7 @@ function renderCommsTable(){
       <td>${allPaid?'<span class="badge badge-paid">Current</span>':'<span class="badge badge-notpaid">Outstanding</span>'}</td>
       <td>
         <button class="btn btn-sm btn-primary" onclick="previewLetter('${m.id}')">👁 Preview</button>
-        ${m.email?`<button class="btn btn-sm btn-outline" onclick="quickSendEmail('${m.id}')">📤 Send</button>`:''}
+        ${m.email?`<button class="btn btn-sm btn-outline" onclick="quickSendEmail('${m.id}', this)">📤 Send</button>`:''}
       </td>
     </tr>`;
   });
@@ -4163,13 +4163,16 @@ function sendLetterEmail(){
   quickSendEmail(currentLetterMemberId);
 }
 
-async function quickSendEmail(memberId){
+async function quickSendEmail(memberId, btn){
   const m = DB.members.find(x=>x.id===memberId);
   if(!m?.email){ alert('No email address on file for '+m?.fullName+'. Please update the member record first.'); return; }
   const settings = {
     deadline: document.getElementById('comms-deadline')?.value || '31 May 2027',
     finsecName: document.getElementById('comms-finsec-name')?.value || 'Mr Dumisani Mphasane',
   };
+  const trigger = btn || (window.event && window.event.target);
+  let oldLabel;
+  if(trigger){ oldLabel = trigger.textContent; trigger.disabled = true; trigger.textContent = '⏳ Sending…'; }
   try{
     // Make sure the server has the latest member + entries before it builds the
     // statement (the normal save is debounced, so flush it first).
@@ -4177,7 +4180,9 @@ async function quickSendEmail(memberId){
     const r = await apiFetch('/api/send-statement', { method:'POST', body: JSON.stringify({ memberId, settings }) });
     alert('✅ Statement emailed to '+m.fullName+' ('+m.email+')');
   }catch(e){
-    alert('Failed to send email: '+e.message);
+    alert('Failed to send email: '+(e&&e.message?e.message:e));
+  }finally{
+    if(trigger){ trigger.disabled = false; trigger.textContent = oldLabel || '📤 Send'; }
   }
 }
 // Force an immediate push of the local DB to the server (bypasses the debounce).
@@ -4185,9 +4190,13 @@ async function flushSync(){
   try{
     if(typeof apiPushAll === 'function' && AUTH_TOKEN){
       clearTimeout(_apiSaveTimer);
-      await apiPushAll(DB);
+      // Never let a slow/cold server hang the Send button — cap the wait at 12s.
+      await Promise.race([
+        apiPushAll(DB),
+        new Promise((_,rej)=>setTimeout(()=>rej(new Error('sync timeout')), 12000)),
+      ]);
     }
-  }catch(e){ console.error('flushSync failed:', e.message); }
+  }catch(e){ console.error('flushSync failed (continuing to send anyway):', e.message); }
 }
 
 // Build a full plain-text version of the contribution statement for email bodies
