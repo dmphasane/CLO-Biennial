@@ -137,7 +137,7 @@ select[multiple]{height:auto;min-height:80px;}
       </select>
     </div>
     <button class="btn btn-primary" style="width:100%;justify-content:center;padding:12px;" onclick="doLogin()">Sign In</button>
-    <p style="text-align:center;margin-top:14px;font-size:11px;color:var(--muted);">Protected under POPIA. Authorised personnel only. <strong>v2.2-build4</strong></p>
+    <p style="text-align:center;margin-top:14px;font-size:11px;color:var(--muted);">Protected under POPIA. Authorised personnel only. <strong>v2.3-build5</strong></p>
   </div>
 </div>
 
@@ -245,6 +245,11 @@ select[multiple]{height:auto;min-height:80px;}
         </div>
         <input type="file" id="file-input" accept=".csv,.xlsx,.xls" style="display:none" onchange="handleFileUpload(event)"/>
         <div id="upload-result" class="mt-2"></div>
+      </div>
+      <div class="card">
+        <div class="card-title">📜 Upload History</div>
+        <div class="text-muted" style="font-size:12px;margin-bottom:8px;">Each statement upload is logged below with its transaction date range and how many new entries were added (duplicates already in the system are skipped automatically).</div>
+        <div id="upload-history-wrap" class="table-wrap"></div>
       </div>
       <div class="card">
         <div class="flex justify-between items-center mb-2">
@@ -750,7 +755,7 @@ const USERS = {
 // ═══════════════════════════════════════════════════════════
 // STATE (persisted to localStorage)
 // ═══════════════════════════════════════════════════════════
-let DB = { members:[], entries:[], auditLog:[], refAliases:{} };
+let DB = { members:[], entries:[], auditLog:[], refAliases:{}, uploads:[] };
 // refAliases: { "NORMALIZED_REF": "memberId" } — learned from manual resolutions
 let currentUser = null;
 let editingMemberId = null;
@@ -777,6 +782,9 @@ async function loadDB(){
   }
   const raw = localStorage.getItem('nedlo_db');
   if(raw){ try{ DB = JSON.parse(raw); } catch(e){} }
+  // Ensure newer collections exist on older cached DBs
+  if(!DB.uploads) DB.uploads = [];
+  if(!DB.refAliases) DB.refAliases = {};
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -927,6 +935,7 @@ function renderAll(){
   renderEntriesTable();
   renderExceptions();
   renderAuditTable();
+  renderUploadHistory();
   updateExcBadge();
 }
 
@@ -1861,6 +1870,10 @@ function importStatementRows(rows, filename){
   let imported=0, skipped=0, outPeriod=0;
   let skippedRows = []; // Track rows that were not imported
   let totalFileCredits = 0; // Sum of all positive amounts in file
+  // ── Upload batch tracking ──
+  const uploadId = uid();
+  let minTxnDate = null, maxTxnDate = null; // ISO date range of imported entries
+  let importedCredits = 0; // sum of credits actually ADDED (new, not duplicates)
   
   // Flexible column finder - very aggressive matching
   function findCol(row, ...patterns){
@@ -2001,8 +2014,13 @@ function importStatementRows(rows, filename){
     const entry={ id:entryId, txnDate, valDate, description:desc,
       referenceRaw:effectiveRef, referenceNorm:normalize(effectiveRef), creditAmount:credit,
       contribMonth:mk, matchStatus:'UNMATCHED', linkedMemberId:null,
-      allocatedAccom:0, allocatedReg:0, resolvedBy:null, resolvedAt:null, fingerprint:fp };
+      allocatedAccom:0, allocatedReg:0, resolvedBy:null, resolvedAt:null, fingerprint:fp,
+      uploadId:uploadId };
     DB.entries.push(entry);
+    // Track the transaction date range and credits for this upload batch
+    const iso = isoDate(txnDate);
+    if(iso){ if(!minTxnDate||iso<minTxnDate) minTxnDate=iso; if(!maxTxnDate||iso>maxTxnDate) maxTxnDate=iso; }
+    importedCredits += credit;
     // Try matching with primary ref first
     matchEntry(entry);
     // If unmatched, try again with the secondary field (description or reference)
@@ -2018,7 +2036,26 @@ function importStatementRows(rows, filename){
     }
     imported++;
   });
+  // Record this upload batch in the history (only if something was actually added)
+  if(imported>0){
+    if(!DB.uploads) DB.uploads=[];
+    DB.uploads.push({
+      id: uploadId,
+      filename: filename||'statement',
+      uploadedAt: new Date().toISOString(),
+      uploadedBy: (currentUser && currentUser.name) || 'Unknown',
+      rowCount: rows.length,
+      imported: imported,
+      duplicatesSkipped: skipped,
+      creditsAdded: parseFloat(importedCredits.toFixed(2)),
+      fromDate: minTxnDate,
+      toDate: maxTxnDate,
+      statementTotalEntered: parseFloat(document.getElementById('stmt-expected-total')?.value)||0,
+    });
+    auditLog('StatementUpload', `Imported ${imported} new entries (${fmt(importedCredits)}) from ${filename} [${minTxnDate||'?'} to ${maxTxnDate||'?'}], ${skipped} duplicates skipped`);
+  }
   saveDB(); renderAll();
+  renderUploadHistory();
   // Calculate system totals for reconciliation check
   const systemTotal = DB.entries.reduce((s,e)=>s+e.creditAmount, 0);
   const excTotal = getExceptions().reduce((s,e)=>s+e.creditAmount, 0);
@@ -2691,6 +2728,62 @@ function renderEntriesTable(){
   });
   h+='</tbody></table>';
   el.innerHTML=h;
+}
+
+// Render the statement upload history (batches), newest first.
+function renderUploadHistory(){
+  const el = document.getElementById('upload-history-wrap');
+  if(!el) return;
+  const ups = (DB.uploads||[]).slice().sort((a,b)=>(b.uploadedAt||'').localeCompare(a.uploadedAt||''));
+  if(!ups.length){ el.innerHTML='<p class="text-muted" style="padding:12px;">No uploads yet.</p>'; return; }
+  const fmtD = (iso)=>{ if(!iso) return '—'; const [y,m,d]=iso.split('-'); return d+'/'+m+'/'+y; };
+  const fmtTs = (iso)=>{ try{ const d=new Date(iso); return d.toLocaleDateString('en-ZA',{day:'2-digit',month:'short',year:'numeric'})+' '+d.toLocaleTimeString('en-ZA',{hour:'2-digit',minute:'2-digit'}); }catch(e){ return iso; } };
+  let runningTotal = 0;
+  let h=`<table><thead><tr>
+    <th>Uploaded</th><th>File</th><th>By</th><th>Txn Date Range</th>
+    <th class="text-right">New Entries</th><th class="text-right">Dups Skipped</th>
+    <th class="text-right">Credits Added</th><th>Action</th>
+  </tr></thead><tbody>`;
+  // Show oldest-first running total but display newest-first; compute per batch
+  const chronological = (DB.uploads||[]).slice().sort((a,b)=>(a.uploadedAt||'').localeCompare(b.uploadedAt||''));
+  const runningMap = {};
+  chronological.forEach(u=>{ runningTotal += (u.creditsAdded||0); runningMap[u.id]=runningTotal; });
+  ups.forEach(u=>{
+    h+=`<tr>
+      <td style="font-size:11.5px;">${fmtTs(u.uploadedAt)}</td>
+      <td style="font-size:11.5px;">${u.filename||'—'}</td>
+      <td style="font-size:11.5px;">${u.uploadedBy||'—'}</td>
+      <td style="font-size:11.5px;">${fmtD(u.fromDate)} &ndash; ${fmtD(u.toDate)}</td>
+      <td class="text-right">${u.imported||0}</td>
+      <td class="text-right">${u.duplicatesSkipped||0}</td>
+      <td class="text-right font-bold" style="color:var(--success);">${fmt(u.creditsAdded||0)}</td>
+      <td><button class="btn btn-danger btn-sm" onclick="undoUpload('${u.id}')" title="Remove all entries added by this upload">↩ Undo</button></td>
+    </tr>`;
+  });
+  const grand = (DB.uploads||[]).reduce((s,u)=>s+(u.creditsAdded||0),0);
+  h+=`<tr class="subtotal-row"><td colspan="6">TOTAL CREDITS ADDED ACROSS ALL UPLOADS</td>
+    <td class="text-right font-bold">${fmt(grand)}</td><td></td></tr>`;
+  h+='</tbody></table>';
+  el.innerHTML=h;
+}
+
+// Undo an entire upload batch: removes every entry tagged with its uploadId,
+// then recalculates affected member ledgers. Lets you roll back a bad import.
+function undoUpload(uploadId){
+  const batch = (DB.uploads||[]).find(u=>u.id===uploadId);
+  if(!batch) return;
+  const batchEntries = DB.entries.filter(e=>e.uploadId===uploadId);
+  if(!confirm(`Undo this upload?\n\nFile: ${batch.filename}\nEntries to remove: ${batchEntries.length}\nCredits to reverse: ${fmt(batch.creditsAdded||0)}\n\nAffected member ledgers will be recalculated.`)) return;
+  const affected = new Set();
+  batchEntries.forEach(e=>{ if(e.linkedMemberId) affected.add(e.linkedMemberId); });
+  DB.entries = DB.entries.filter(e=>e.uploadId!==uploadId);
+  DB.uploads = DB.uploads.filter(u=>u.id!==uploadId);
+  affected.forEach(mid=>recalcLedgerForMember(mid));
+  auditLog('UploadUndone', `Undid upload ${batch.filename} (${batchEntries.length} entries, ${fmt(batch.creditsAdded||0)})`);
+  // Remove the batch (and its entries) on the server too
+  if(typeof apiDeleteUpload === 'function' && AUTH_TOKEN){ apiDeleteUpload(uploadId).catch(e=>console.error('server undo failed:', e.message)); }
+  saveDB(); renderAll();
+  alert(`Removed ${batchEntries.length} entries from that upload.`);
 }
 
 function statusBadge(status){

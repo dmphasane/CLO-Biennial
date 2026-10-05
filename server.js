@@ -173,12 +173,12 @@ app.post('/api/entries/bulk', authRequired, async (req, res)=>{
     for(const e of entries){
       await client.query(
         `INSERT INTO entries (id,txn_date,val_date,description,reference_raw,reference_norm,credit_amount,
-           contrib_month,match_status,linked_member_id,allocated_accom,allocated_reg,resolved_by,resolved_at,fingerprint)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+           contrib_month,match_status,linked_member_id,allocated_accom,allocated_reg,resolved_by,resolved_at,fingerprint,upload_id)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
          ON CONFLICT (id) DO UPDATE SET match_status=$9,linked_member_id=$10,allocated_accom=$11,
-           allocated_reg=$12,resolved_by=$13,resolved_at=$14,contrib_month=$8,fingerprint=$15`,
+           allocated_reg=$12,resolved_by=$13,resolved_at=$14,contrib_month=$8,fingerprint=$15,upload_id=$16`,
         [e.id,e.txnDate,e.valDate,e.description,e.referenceRaw,e.referenceNorm,e.creditAmount,
-         e.contribMonth,e.matchStatus,e.linkedMemberId,e.allocatedAccom,e.allocatedReg,e.resolvedBy,e.resolvedAt,e.fingerprint||null]
+         e.contribMonth,e.matchStatus,e.linkedMemberId,e.allocatedAccom,e.allocatedReg,e.resolvedBy,e.resolvedAt,e.fingerprint||null,e.uploadId||null]
       );
     }
     await client.query('COMMIT');
@@ -207,6 +207,31 @@ app.post('/api/aliases', authRequired, async (req, res)=>{
      ON CONFLICT (ref_norm) DO UPDATE SET member_id=$2, member_ids=$3`,
     [refNorm, memberId||null, memberIds?JSON.stringify(memberIds):null]
   );
+  res.json({ ok:true });
+});
+
+// ─── UPLOAD HISTORY ───
+app.get('/api/uploads', authRequired, async (req, res)=>{
+  const r = await query('SELECT * FROM uploads ORDER BY uploaded_at DESC');
+  res.json(r.rows.map(rowToUpload));
+});
+app.post('/api/uploads', authRequired, async (req, res)=>{
+  const u = req.body;
+  await query(
+    `INSERT INTO uploads (id,filename,uploaded_at,uploaded_by,row_count,imported,duplicates_skipped,credits_added,from_date,to_date,statement_total_entered)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+     ON CONFLICT (id) DO UPDATE SET filename=$2,uploaded_by=$4,row_count=$5,imported=$6,
+       duplicates_skipped=$7,credits_added=$8,from_date=$9,to_date=$10,statement_total_entered=$11`,
+    [u.id, u.filename, u.uploadedAt||new Date().toISOString(), u.uploadedBy, u.rowCount||0, u.imported||0,
+     u.duplicatesSkipped||0, u.creditsAdded||0, u.fromDate||null, u.toDate||null, u.statementTotalEntered||0]
+  );
+  res.json({ ok:true });
+});
+app.delete('/api/uploads/:id', authRequired, async (req, res)=>{
+  // Remove the batch's entries and the batch record
+  await query('DELETE FROM entries WHERE upload_id=$1', [req.params.id]);
+  await query('DELETE FROM uploads WHERE id=$1', [req.params.id]);
+  await logAudit(req.user, 'UploadUndone', req.params.id);
   res.json({ ok:true });
 });
 
@@ -274,7 +299,13 @@ function rowToEntry(r){
     referenceRaw:r.reference_raw, referenceNorm:r.reference_norm, creditAmount:Number(r.credit_amount),
     contribMonth:r.contrib_month, matchStatus:r.match_status, linkedMemberId:r.linked_member_id,
     allocatedAccom:Number(r.allocated_accom), allocatedReg:Number(r.allocated_reg),
-    resolvedBy:r.resolved_by, resolvedAt:r.resolved_at, fingerprint:r.fingerprint };
+    resolvedBy:r.resolved_by, resolvedAt:r.resolved_at, fingerprint:r.fingerprint, uploadId:r.upload_id };
+}
+function rowToUpload(r){
+  return { id:r.id, filename:r.filename, uploadedAt:r.uploaded_at, uploadedBy:r.uploaded_by,
+    rowCount:r.row_count, imported:r.imported, duplicatesSkipped:r.duplicates_skipped,
+    creditsAdded:Number(r.credits_added), fromDate:r.from_date, toDate:r.to_date,
+    statementTotalEntered:Number(r.statement_total_entered) };
 }
 
 // ─── EMAIL: send a single member's statement ───

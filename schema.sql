@@ -54,14 +54,31 @@ CREATE TABLE IF NOT EXISTS entries (
   resolved_by TEXT,
   resolved_at TIMESTAMPTZ,
   fingerprint TEXT,
+  upload_id TEXT,
   created_at TIMESTAMPTZ DEFAULT now()
 );
 
 CREATE INDEX IF NOT EXISTS idx_entries_member ON entries(linked_member_id);
 CREATE INDEX IF NOT EXISTS idx_entries_status ON entries(match_status);
 CREATE INDEX IF NOT EXISTS idx_entries_fp ON entries(fingerprint);
--- Add fingerprint column if upgrading an existing database
+CREATE INDEX IF NOT EXISTS idx_entries_upload ON entries(upload_id);
+-- Add columns if upgrading an existing database
 ALTER TABLE entries ADD COLUMN IF NOT EXISTS fingerprint TEXT;
+ALTER TABLE entries ADD COLUMN IF NOT EXISTS upload_id TEXT;
+
+CREATE TABLE IF NOT EXISTS uploads (
+  id TEXT PRIMARY KEY,
+  filename TEXT,
+  uploaded_at TIMESTAMPTZ DEFAULT now(),
+  uploaded_by TEXT,
+  row_count INT DEFAULT 0,
+  imported INT DEFAULT 0,
+  duplicates_skipped INT DEFAULT 0,
+  credits_added NUMERIC(12,2) DEFAULT 0,
+  from_date TEXT,
+  to_date TEXT,
+  statement_total_entered NUMERIC(12,2) DEFAULT 0
+);
 
 CREATE TABLE IF NOT EXISTS ref_aliases (
   ref_norm TEXT PRIMARY KEY,

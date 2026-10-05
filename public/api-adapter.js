@@ -45,13 +45,14 @@ async function apiLogin(username, password){
 
 // ─── Load all data from the API into the DB object ───
 async function apiLoadAll(){
-  const [members, entries, aliases, audit] = await Promise.all([
+  const [members, entries, aliases, audit, uploads] = await Promise.all([
     apiFetch('/api/members'),
     apiFetch('/api/entries'),
     apiFetch('/api/aliases'),
     apiFetch('/api/audit'),
+    apiFetch('/api/uploads').catch(()=>[]),
   ]);
-  return { members, entries, refAliases: aliases||{}, auditLog: audit||[] };
+  return { members, entries, refAliases: aliases||{}, auditLog: audit||[], uploads: uploads||[] };
 }
 
 // ─── Persist helpers ───
@@ -61,6 +62,8 @@ async function apiSaveEntries(entries){ return apiFetch('/api/entries/bulk', { m
 async function apiClearEntries(){ return apiFetch('/api/entries', { method:'DELETE' }); }
 async function apiSaveAlias(refNorm, memberId, memberIds){ return apiFetch('/api/aliases', { method:'POST', body: JSON.stringify({ refNorm, memberId, memberIds }) }); }
 async function apiRegister(m){ return apiFetch('/api/register', { method:'POST', body: JSON.stringify(m) }); }
+async function apiSaveUpload(u){ return apiFetch('/api/uploads', { method:'POST', body: JSON.stringify(u) }); }
+async function apiDeleteUpload(id){ return apiFetch('/api/uploads/'+id, { method:'DELETE' }); }
 
 // ─── Debounced full-save: pushes the whole DB state to the server ───
 let _saveTimer = null;
@@ -73,5 +76,6 @@ async function apiPushAll(DB){
       if(Array.isArray(val)) await apiSaveAlias(refNorm, null, val);
       else await apiSaveAlias(refNorm, val, null);
     }
+    for(const u of (DB.uploads||[])){ await apiSaveUpload(u); }
   }catch(e){ console.error('Push failed:', e.message); }
 }
