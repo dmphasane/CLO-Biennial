@@ -1177,20 +1177,58 @@ function renderLedgerBody(m){
   if(!entries.length){ html+='<p class="text-muted" style="padding:8px;">No entries.</p>'; }
   else {
     html+=`<div class="table-wrap"><table><thead><tr>
-      <th>Date</th><th>Reference</th><th class="text-right">Amount</th><th>Allocated Month</th><th>Status</th>
+      <th>Date</th><th>Reference</th><th class="text-right">Amount</th><th>Allocated Month</th><th>Status</th><th>Action</th>
     </tr></thead><tbody>`;
     entries.forEach(e=>{
       html+=`<tr><td>${e.txnDate}</td><td>${e.referenceRaw}</td>
         <td class="text-right font-bold">${fmt(e.creditAmount)}</td>
         <td>${monthLabel(e.contribMonth)||e.contribMonth}</td>
-        <td>${statusBadge(e.matchStatus)}</td></tr>`;
+        <td>${statusBadge(e.matchStatus)}</td>
+        <td><button class="btn btn-danger btn-sm" onclick="unlinkEntryFromMember('${e.id}','${m.id}')" title="Remove this payment from this member and return it to the Exceptions queue for re-matching">✂️ Unlink</button></td></tr>`;
     });
     const total=entries.filter(e=>e.matchStatus==='MATCHED').reduce((s,e)=>s+e.creditAmount,0);
-    html+=`<tr class="subtotal-row"><td colspan="2">Total Matched</td><td class="text-right">${fmt(total)}</td><td colspan="2"></td></tr>`;
+    html+=`<tr class="subtotal-row"><td colspan="2">Total Matched</td><td class="text-right">${fmt(total)}</td><td colspan="3"></td></tr>`;
     html+=`</tbody></table></div>`;
   }
   document.getElementById('ledger-modal-body').innerHTML=html;
 }
+
+// Unlink a single payment from a member: returns it to the Exceptions queue
+// (UNMATCHED), clears allocations, and recalculates the member's ledger.
+function unlinkEntryFromMember(entryId, memberId){
+  const e = DB.entries.find(x=>x.id===entryId);
+  const m = DB.members.find(x=>x.id===memberId);
+  if(!e || !m) return;
+  if(!confirm(`Remove this payment of ${fmt(e.creditAmount)} (${e.referenceRaw}) from ${m.fullName}?\n\nThe payment will return to the Exceptions queue as UNMATCHED so you can re-assign it to the correct member.`)) return;
+
+  // Reset the entry to unmatched
+  e.matchStatus = 'UNMATCHED';
+  e.linkedMemberId = null;
+  e.allocatedAccom = 0;
+  e.allocatedReg = 0;
+  e.resolvedBy = null;
+  e.resolvedAt = null;
+
+  // If a learned alias was pointing this reference at this member, forget it so
+  // it doesn't auto-re-match to the wrong person on the next run.
+  const norm = normalize(e.referenceRaw||'');
+  if(DB.refAliases && DB.refAliases[norm]){
+    const aliasVal = DB.refAliases[norm];
+    const pointsHere = Array.isArray(aliasVal) ? aliasVal.includes(memberId) : aliasVal===memberId;
+    if(pointsHere && confirm('A learned reference alias linked "'+e.referenceRaw+'" to this member.\n\nForget that alias too? (Recommended, so this payment is not re-matched to the wrong member automatically.)')){
+      delete DB.refAliases[norm];
+    }
+  }
+
+  // Rebuild this member's ledger from their remaining matched entries
+  recalcLedgerForMember(memberId);
+  auditLog('EntryUnlinked', `Unlinked ${e.referenceRaw} (${fmt(e.creditAmount)}) from ${m.paymentRef}`);
+  saveDB();
+  // Refresh the open ledger modal and the rest of the UI
+  renderLedgerBody(m);
+  renderAll();
+}
+
 let mergePrimaryId = null;
 function startMerge(memberId){
   mergePrimaryId = memberId;
@@ -4133,11 +4171,23 @@ async function quickSendEmail(memberId){
     finsecName: document.getElementById('comms-finsec-name')?.value || 'Mr Dumisani Mphasane',
   };
   try{
-    await apiFetch('/api/send-statement', { method:'POST', body: JSON.stringify({ memberId, settings }) });
+    // Make sure the server has the latest member + entries before it builds the
+    // statement (the normal save is debounced, so flush it first).
+    await flushSync();
+    const r = await apiFetch('/api/send-statement', { method:'POST', body: JSON.stringify({ memberId, settings }) });
     alert('✅ Statement emailed to '+m.fullName+' ('+m.email+')');
   }catch(e){
     alert('Failed to send email: '+e.message);
   }
+}
+// Force an immediate push of the local DB to the server (bypasses the debounce).
+async function flushSync(){
+  try{
+    if(typeof apiPushAll === 'function' && AUTH_TOKEN){
+      clearTimeout(_apiSaveTimer);
+      await apiPushAll(DB);
+    }
+  }catch(e){ console.error('flushSync failed:', e.message); }
 }
 
 // Build a full plain-text version of the contribution statement for email bodies
@@ -4247,6 +4297,7 @@ async function bulkSendEmails(){
     finsecName: document.getElementById('comms-finsec-name')?.value || 'Mr Dumisani Mphasane',
   };
   try{
+    await flushSync();
     const r = await apiFetch('/api/send-bulk', { method:'POST', body: JSON.stringify({ memberIds: withEmail, settings }) });
     alert(`✅ Bulk send complete: ${r.sent} sent, ${r.skipped} skipped, ${r.failed} failed.`);
   }catch(e){
