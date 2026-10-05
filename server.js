@@ -115,6 +115,35 @@ app.post('/api/debug/reseed', async (req, res)=>{
   }catch(e){ res.status(500).json({ error:String(e.message||e) }); }
 });
 
+// Debug: test the Gmail connection and optionally send a test email.
+// Usage: GET /api/debug/email-test?to=someone@example.com
+app.get('/api/debug/email-test', async (req, res)=>{
+  const to = req.query.to;
+  const hasUser = !!process.env.GMAIL_USER;
+  const hasPass = !!process.env.GMAIL_APP_PASSWORD;
+  const passLen = (process.env.GMAIL_APP_PASSWORD||'').length;
+  const passHasSpaces = /\s/.test(process.env.GMAIL_APP_PASSWORD||'');
+  const info = { gmailUserSet:hasUser, gmailUser:process.env.GMAIL_USER||null, appPasswordSet:hasPass, appPasswordLength:passLen, appPasswordHasSpaces:passHasSpaces };
+  if(!hasUser || !hasPass){ return res.status(400).json({ ok:false, reason:'Gmail env vars missing', ...info }); }
+  try{
+    const transport = makeTransport();
+    await transport.verify(); // checks credentials/connection without sending
+    let sent = false;
+    if(to){
+      await transport.sendMail({
+        from: `"NEDLO Biennial 2027" <${process.env.GMAIL_USER}>`,
+        to,
+        subject: 'NEDLO email test',
+        text: 'This is a test email from the NEDLO Stokvel server. If you received this, Gmail sending works.',
+      });
+      sent = true;
+    }
+    res.json({ ok:true, verified:true, testEmailSent:sent, sentTo:to||null, ...info });
+  }catch(e){
+    res.status(500).json({ ok:false, verified:false, error:String(e.message||e), code:e.code||'', ...info });
+  }
+});
+
 // ─── MEMBERS ───
 app.get('/api/members', authRequired, async (req, res)=>{
   const r = await query('SELECT * FROM members ORDER BY conference_code, full_name');
