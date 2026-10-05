@@ -3861,7 +3861,7 @@ function renderCommsTable(){
   let html=`<table><thead><tr>
     <th><input type="checkbox" id="comms-select-all" onchange="document.querySelectorAll('.comms-cb').forEach(c=>c.checked=this.checked)" style="width:auto;"/></th>
     <th>Member</th><th>Conference</th><th>Email</th><th>Option</th>
-    <th class="text-right">Total Paid</th><th class="text-right">Outstanding</th><th>Status</th><th>Actions</th>
+    <th class="text-right">Total Paid</th><th class="text-right">Outstanding</th><th>Status</th><th>Statement Sent</th><th>Actions</th>
   </tr></thead><tbody>`;
 
   members.forEach(m=>{
@@ -3880,6 +3880,7 @@ function renderCommsTable(){
       <td class="text-right" style="color:var(--success);">${fmt(actualPaid)}</td>
       <td class="text-right" style="color:${outstanding>0?'var(--danger)':'var(--success)'}">${isFlexAmount?'—':fmt(outstanding)}</td>
       <td>${allPaid?'<span class="badge badge-paid">Current</span>':'<span class="badge badge-notpaid">Outstanding</span>'}</td>
+      <td style="font-size:11.5px;">${m.lastStatementSentAt?('<span class="badge badge-paid">Sent</span><br/><span style="color:var(--muted);">'+fmtSentStamp(m.lastStatementSentAt)+'</span>'):'<span class="text-muted">Not sent</span>'}</td>
       <td>
         <button class="btn btn-sm btn-primary" onclick="previewLetter('${m.id}')">👁 Preview</button>
         ${m.email?`<button class="btn btn-sm btn-outline" onclick="quickSendEmail('${m.id}', this)">📤 Send</button>`:''}
@@ -4178,12 +4179,24 @@ async function quickSendEmail(memberId, btn){
     // statement (the normal save is debounced, so flush it first).
     await flushSync();
     const r = await apiFetch('/api/send-statement', { method:'POST', body: JSON.stringify({ memberId, settings }) });
-    alert('✅ Statement emailed to '+m.fullName+' ('+m.email+')');
+    // Record the sent timestamp against the member for the Communications status view
+    m.lastStatementSentAt = new Date().toISOString();
+    saveDB();
+    renderCommsTable();
+    alert('Statement emailed to '+m.fullName+' ('+m.email+')');
   }catch(e){
     alert('Failed to send email: '+(e&&e.message?e.message:e));
   }finally{
-    if(trigger){ trigger.disabled = false; trigger.textContent = oldLabel || '📤 Send'; }
+    if(trigger){ trigger.disabled = false; trigger.textContent = oldLabel || 'Send'; }
   }
+}
+// Format a stored ISO timestamp for the "Statement Sent" column (SA locale).
+function fmtSentStamp(iso){
+  try{
+    const d = new Date(iso);
+    return d.toLocaleDateString('en-ZA',{day:'2-digit',month:'short',year:'numeric'}) + ' ' +
+           d.toLocaleTimeString('en-ZA',{hour:'2-digit',minute:'2-digit'});
+  }catch(e){ return iso; }
 }
 // Force an immediate push of the local DB to the server (bypasses the debounce).
 async function flushSync(){
@@ -4308,7 +4321,13 @@ async function bulkSendEmails(){
   try{
     await flushSync();
     const r = await apiFetch('/api/send-bulk', { method:'POST', body: JSON.stringify({ memberIds: withEmail, settings }) });
-    alert(`✅ Bulk send complete: ${r.sent} sent, ${r.skipped} skipped, ${r.failed} failed.`);
+    // Stamp the sent timestamp on each member the server confirmed as sent
+    const stamp = new Date().toISOString();
+    const sentIds = Array.isArray(r.sentIds) ? r.sentIds : withEmail; // fallback if older server
+    sentIds.forEach(id=>{ const mm=DB.members.find(x=>x.id===id); if(mm) mm.lastStatementSentAt = stamp; });
+    saveDB();
+    renderCommsTable();
+    alert(`Bulk send complete: ${r.sent} sent, ${r.skipped} skipped, ${r.failed} failed.`);
   }catch(e){
     alert('Bulk send failed: '+e.message);
   }
@@ -4319,7 +4338,7 @@ function printLetter(){
   const m = DB.members.find(x=>x.id===currentLetterMemberId);
   const html = generateLetterHTML(currentLetterMemberId);
   const win = window.open('','_blank','width=750,height=900');
-  win.document.write(`<!DOCTYPE html><html><head><title>Contribution Statement – ${m?.fullName}</title>
+  win.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"/><title>Contribution Statement - ${m?.fullName}</title>
     <style>body{font-family:'Segoe UI',Arial,sans-serif;margin:20px;}@media print{body{margin:0;}}</style>
     </head><body>${html}<script>window.onload=function(){window.print();};<\/script></body></html>`);
   win.document.close();
@@ -4336,7 +4355,7 @@ function bulkExportLettersPDF(){
       const html=generateLetterHTML(id);
       const win=window.open('','_blank','width=750,height=900');
       if(!win){ alert('Pop-ups are blocked. Please allow pop-ups for this page.'); return; }
-      win.document.write(`<!DOCTYPE html><html><head><title>Statement – ${m.fullName}</title>
+      win.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"/><title>Statement - ${m.fullName}</title>
         <style>body{font-family:'Segoe UI',Arial,sans-serif;margin:20px;}@media print{body{margin:0;}}</style>
         </head><body>${html}<script>window.onload=function(){window.print();};<\/script></body></html>`);
       win.document.close();
