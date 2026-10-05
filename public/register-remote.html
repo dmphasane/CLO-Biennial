@@ -78,7 +78,7 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--muted);}
           <tr><td>Option</td><td class="val" id="s-option"></td></tr>
           <tr><td>Hotel</td><td class="val" id="s-hotel"></td></tr>
           <tr><td>Monthly Payment</td><td class="val" id="s-total"></td></tr>
-          <tr><td>12-Month Total</td><td class="val" id="s-total12"></td></tr>
+          <tr><td>Total Commitment</td><td class="val" id="s-total12"></td></tr>
           <tr><td>Your Reference</td><td class="val" style="color:var(--primary);font-size:15px;" id="s-ref"></td></tr>
         </table></div>
         <div class="bank-box"><div style="font-weight:700;color:var(--primary);margin-bottom:8px;">Banking Details</div><table>
@@ -110,15 +110,26 @@ const OPTIONS={
   'CAP-S':{hotel:'The Capital',type:'Single B&B',total:r2((12250+REG_TOTAL)/8),accom:r2(12250/8),reg:r2(REG_TOTAL/8),months:8},
   'CAP-SH':{hotel:'The Capital',type:'Sharing B&B (per person)',total:r2((6900+REG_TOTAL)/8),accom:r2(6900/8),reg:r2(REG_TOTAL/8),months:8},
   'CAT-S':{hotel:'The Catalyst',type:'Single B&B',total:r2((7950+REG_TOTAL)/8),accom:r2(7950/8),reg:r2(REG_TOTAL/8),months:8},
-  'CAT-SH':{hotel:'The Catalyst',type:'Sharing B&B (per person)',total:r2((4725+REG_TOTAL)/8),accom:r2(4725/8),reg:r2(REG_TOTAL/8),months:8}
+  'CAT-SH':{hotel:'The Catalyst',type:'Sharing B&B (per person)',total:r2((4725+REG_TOTAL)/8),accom:r2(4725/8),reg:r2(REG_TOTAL/8),months:8},
+  // Existing hotels for NEW registrants, recalculated over 8 months
+  'OPT-1':{hotel:'Sandton Sun',type:'Not Sharing',accomFull:19775.04,months:8},
+  'OPT-2':{hotel:'Sandton Sun',type:'Sharing',accomFull:10887.48,months:8},
+  'OPT-3':{hotel:'Sandton Towers',type:'Not Sharing',accomFull:21275.04,months:8},
+  'OPT-4':{hotel:'Sandton Towers',type:'Sharing',accomFull:10635.48,months:8},
+  'OPT-5':{hotel:'Garden Court',type:'Not Sharing',accomFull:8975.04,months:8},
+  'OPT-6':{hotel:'Garden Court',type:'Sharing',accomFull:5212.56,months:8}
 };
+const EXISTING_HOTEL_KEYS=['OPT-1','OPT-2','OPT-3','OPT-4','OPT-5','OPT-6'];
+EXISTING_HOTEL_KEYS.forEach(k=>{const o=OPTIONS[k];o.accom=r2(o.accomFull/8);o.reg=r2(REG_TOTAL/8);o.total=r2((o.accomFull+REG_TOTAL)/8);});
 let sel=null;
 function fmt(n){return'R'+Number(n).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g,',');}
+function rIcon(o){return o.regOnly?'📋':o.hotel.includes('Capital')?'🏨':o.hotel.includes('Catalyst')?'🏢':o.hotel.includes('Sun')?'☀️':o.hotel.includes('Tower')?'🏨':'🌿';}
 const list=document.getElementById('options-list');
-Object.entries(OPTIONS).forEach(([k,o])=>{
-  const icon=o.regOnly?'📋':o.hotel.includes('Capital')?'🏨':'🏢';
-  list.innerHTML+=`<div class="option-card" id="o-${k}" onclick="pick('${k}')"><div class="hotel">${icon} ${o.hotel}</div><div class="type">${o.type}</div><div class="price">${fmt(o.total)}/mo</div></div>`;
-});
+let rHtml='<div style="font-size:12px;font-weight:700;color:var(--primary);margin:4px 0 8px;">New Options</div>';
+Object.entries(OPTIONS).forEach(([k,o])=>{ if(!EXISTING_HOTEL_KEYS.includes(k)) rHtml+=`<div class="option-card" id="o-${k}" onclick="pick('${k}')"><div class="hotel">${rIcon(o)} ${o.hotel}</div><div class="type">${o.type}</div><div class="price">${fmt(o.total)}/mo</div></div>`; });
+rHtml+='<div style="font-size:12px;font-weight:700;color:var(--primary);margin:16px 0 8px;">Existing Hotels (over 8 months)</div>';
+EXISTING_HOTEL_KEYS.forEach(k=>{const o=OPTIONS[k];rHtml+=`<div class="option-card" id="o-${k}" onclick="pick('${k}')"><div class="hotel">${rIcon(o)} ${o.hotel}</div><div class="type">${o.type}</div><div class="price">${fmt(o.total)}/mo</div></div>`;});
+list.innerHTML=rHtml;
 function pick(k){sel=k;document.querySelectorAll('.option-card').forEach(c=>c.classList.remove('selected'));document.getElementById('o-'+k).classList.add('selected');const o=OPTIONS[k];document.getElementById('summary-section').classList.remove('hidden');document.getElementById('s-option').textContent=k;document.getElementById('s-hotel').textContent=o.hotel+' – '+o.type;document.getElementById('s-total').textContent=fmt(o.total);document.getElementById('s-total12').textContent=fmt(o.total*o.months)+' ('+o.months+' mo)';const n=document.getElementById('r-name').value.trim(),c=document.getElementById('r-conf').value;document.getElementById('s-ref').textContent=(c&&n)?(c+'-'+n).toUpperCase():'[Enter name & conference above]';}
 ['r-name','r-conf'].forEach(id=>document.getElementById(id).addEventListener('input',()=>{if(sel)pick(sel);}));
 function submitReg(){

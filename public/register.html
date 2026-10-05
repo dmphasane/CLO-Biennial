@@ -85,7 +85,7 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--muted);}
 
     <div class="card">
       <div class="card-title">Select Accommodation Option</div>
-      <div class="alert alert-info">Each hotel option includes Biennial Registration (R5,700 total) + Accommodation, spread over 8 months (Oct 2026 – May 2027). Registration Only is spread over 3 months (Oct – Dec 2026).</div>
+      <div class="alert alert-info">All options include Biennial Registration (R5,700) + Accommodation, spread over <strong>8 months</strong> (Oct 2026 – May 2027). Registration Only is spread over 3 months (Oct – Dec 2026). New registrations use the 8-month schedule regardless of hotel.</div>
       <div id="options-list"></div>
     </div>
 
@@ -147,30 +147,56 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--muted);}
 const REG_TOTAL = 5700;
 const SCHED_NEW = ['2026-10','2026-11','2026-12','2027-01','2027-02','2027-03','2027-04','2027-05']; // 8 months
 const SCHED_REGONLY = ['2026-10','2026-11','2026-12']; // 3 months
+const SCHED_LEGACY = ['2026-06','2026-07','2026-08','2026-09','2026-10','2026-11','2026-12','2027-01','2027-02','2027-03','2027-04','2027-05']; // 12 months
 const r2 = n => parseFloat(n.toFixed(2));
 const OPTIONS = {
-  'REG-ONLY': { hotel:'Registration Only', type:'No Accommodation', total:r2(REG_TOTAL/3), accom:0, reg:r2(REG_TOTAL/3), months:3, regOnly:true },
-  'CAP-S':  { hotel:'The Capital',  type:'Single B&B',               total:r2((12250+REG_TOTAL)/8), accom:r2(12250/8), reg:r2(REG_TOTAL/8), months:8 },
-  'CAP-SH': { hotel:'The Capital',  type:'Sharing B&B (per person)', total:r2((6900+REG_TOTAL)/8),  accom:r2(6900/8),  reg:r2(REG_TOTAL/8), months:8 },
-  'CAT-S':  { hotel:'The Catalyst', type:'Single B&B',               total:r2((7950+REG_TOTAL)/8),  accom:r2(7950/8),  reg:r2(REG_TOTAL/8), months:8 },
-  'CAT-SH': { hotel:'The Catalyst', type:'Sharing B&B (per person)', total:r2((4725+REG_TOTAL)/8),  accom:r2(4725/8),  reg:r2(REG_TOTAL/8), months:8 },
+  // ── New options (Oct 2026 cohort) ──
+  'REG-ONLY': { hotel:'Registration Only', type:'No Accommodation', total:r2(REG_TOTAL/3), accom:0, reg:r2(REG_TOTAL/3), months:3, regOnly:true, cohort:'new' },
+  'CAP-S':  { hotel:'The Capital',  type:'Single B&B',               total:r2((12250+REG_TOTAL)/8), accom:r2(12250/8), reg:r2(REG_TOTAL/8), months:8, cohort:'new' },
+  'CAP-SH': { hotel:'The Capital',  type:'Sharing B&B (per person)', total:r2((6900+REG_TOTAL)/8),  accom:r2(6900/8),  reg:r2(REG_TOTAL/8), months:8, cohort:'new' },
+  'CAT-S':  { hotel:'The Catalyst', type:'Single B&B',               total:r2((7950+REG_TOTAL)/8),  accom:r2(7950/8),  reg:r2(REG_TOTAL/8), months:8, cohort:'new' },
+  'CAT-SH': { hotel:'The Catalyst', type:'Sharing B&B (per person)', total:r2((4725+REG_TOTAL)/8),  accom:r2(4725/8),  reg:r2(REG_TOTAL/8), months:8, cohort:'new' },
+  // ── Existing hotels, offered to NEW registrants over the 8-month schedule ──
+  // Full commitment = (full accommodation for 5 nights) + R5,700 registration,
+  // recalculated over 8 months (Oct 2026 – May 2027) for new members.
+  // (Legacy members registered before Oct 2026 keep their original 12-month rate
+  //  in the admin portal — this public form is for NEW registrations only.)
+  'OPT-1': { hotel:'Sandton Sun',    type:'Not Sharing', accomFull:19775.04, months:8, cohort:'new' },
+  'OPT-2': { hotel:'Sandton Sun',    type:'Sharing',     accomFull:10887.48, months:8, cohort:'new' },
+  'OPT-3': { hotel:'Sandton Towers', type:'Not Sharing', accomFull:21275.04, months:8, cohort:'new' },
+  'OPT-4': { hotel:'Sandton Towers', type:'Sharing',     accomFull:10635.48, months:8, cohort:'new' },
+  'OPT-5': { hotel:'Garden Court',   type:'Not Sharing', accomFull: 8975.04, months:8, cohort:'new' },
+  'OPT-6': { hotel:'Garden Court',   type:'Sharing',     accomFull: 5212.56, months:8, cohort:'new' },
 };
+// Fill in monthly figures for the existing-hotel options over 8 months
+['OPT-1','OPT-2','OPT-3','OPT-4','OPT-5','OPT-6'].forEach(k=>{
+  const o = OPTIONS[k];
+  o.accom = r2(o.accomFull/8);
+  o.reg   = r2(REG_TOTAL/8);
+  o.total = r2((o.accomFull+REG_TOTAL)/8);
+});
 let selectedOpt = null;
 function fmt(n){ return 'R'+Number(n).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g,','); }
 function normalize(ref){ return (ref||'').toUpperCase().replace(/\s+/g,' ').trim(); }
 
 // Render option cards
-const list = document.getElementById('options-list');
-Object.entries(OPTIONS).forEach(([key, o])=>{
-  const icon = o.regOnly?'📋':o.hotel.includes('Capital')?'🏨':'🏢';
-  const period = o.regOnly ? 'Oct–Dec 2026 (3 months)' : 'Oct 2026–May 2027 (8 months)';
-  list.innerHTML += `<div class="option-card" id="opt-${key}" onclick="selectOption('${key}')">
-    <div class="hotel">${icon} ${o.hotel}</div>
+const EXISTING_HOTEL_KEYS = ['OPT-1','OPT-2','OPT-3','OPT-4','OPT-5','OPT-6'];
+function optIcon(o){ return o.regOnly?'📋':o.hotel.includes('Capital')?'🏨':o.hotel.includes('Catalyst')?'🏢':o.hotel.includes('Sun')?'☀️':o.hotel.includes('Tower')?'🏨':'🌿'; }
+function optPeriod(o){ return o.regOnly?'Oct–Dec 2026 (3 months)':'Oct 2026–May 2027 (8 months)'; }
+function optCard(key,o){
+  return `<div class="option-card" id="opt-${key}" onclick="selectOption('${key}')">
+    <div class="hotel">${optIcon(o)} ${o.hotel}</div>
     <div class="type">${o.type}</div>
     <div class="price">${fmt(o.total)}/mo</div>
-    <div style="font-size:11px;color:var(--muted);margin-top:4px;">${o.regOnly?'Registration only':'Accom: '+fmt(o.accom)+' + Reg: '+fmt(o.reg)} · ${period}</div>
+    <div style="font-size:11px;color:var(--muted);margin-top:4px;">${o.regOnly?'Registration only':'Accom: '+fmt(o.accom)+' + Reg: '+fmt(o.reg)} · ${optPeriod(o)}</div>
   </div>`;
-});
+}
+const list = document.getElementById('options-list');
+let listHtml = '<div style="font-size:12px;font-weight:700;color:var(--primary);margin:4px 0 8px;text-transform:uppercase;letter-spacing:.5px;">New Options (The Capital / The Catalyst)</div>';
+Object.entries(OPTIONS).forEach(([key, o])=>{ if(!EXISTING_HOTEL_KEYS.includes(key)) listHtml += optCard(key,o); });
+listHtml += '<div style="font-size:12px;font-weight:700;color:var(--primary);margin:16px 0 8px;text-transform:uppercase;letter-spacing:.5px;">Existing Hotels (over 8 months)</div>';
+EXISTING_HOTEL_KEYS.forEach(key=>{ listHtml += optCard(key, OPTIONS[key]); });
+list.innerHTML = listHtml;
 
 function selectOption(key){
   selectedOpt=key;
@@ -221,10 +247,10 @@ async function submitRegistration(){
     email:email, phone:phone, accommodationOption:selectedOpt,
     expectedMonthlyTotal:o.total, expectedAccom:o.accom, expectedReg:o.reg,
     paymentRef:ref, registrationDate:new Date().toISOString().split('T')[0],
-    cohort:'new'   // all public registrations are the new (Oct 2026) cohort
+    cohort:'new'   // all public (new) registrations use the 8-month / 3-month schedule
   };
 
-  // Build member with ledger for the correct schedule (3 or 8 months)
+  // Build member with ledger for the correct schedule (3 months reg-only, else 8 months)
   const MONTHS = o.regOnly ? SCHED_REGONLY : SCHED_NEW;
   member.id='ID-'+Math.random().toString(36).substr(2,9).toUpperCase();
   member.ledger={};
