@@ -4,14 +4,21 @@ dotenv.config();
 
 const FROM_EMAIL = process.env.GMAIL_USER || 'nedloregistration@gmail.com';
 
-// Gmail transport using an App Password (never the account password)
+// Gmail transport using an App Password (never the account password).
+// NOTE: Render blocks the default SMTP ports (465/587) which causes ETIMEDOUT.
+// We use STARTTLS on port 587 with an explicit host and a short timeout, and
+// strip any spaces from the app password (Google displays it with spaces).
 export function makeTransport(){
+  const pass = (process.env.GMAIL_APP_PASSWORD || '').replace(/\s+/g, '');
   return nodemailer.createTransport({
-    service: 'gmail',
-    auth: {
-      user: FROM_EMAIL,
-      pass: process.env.GMAIL_APP_PASSWORD, // 16-char app password, no spaces
-    },
+    host: 'smtp.gmail.com',
+    port: Number(process.env.SMTP_PORT || 587),
+    secure: false,            // STARTTLS (upgrade on 587)
+    requireTLS: true,
+    auth: { user: FROM_EMAIL, pass },
+    connectionTimeout: 15000,
+    greetingTimeout: 10000,
+    socketTimeout: 20000,
   });
 }
 
