@@ -25,6 +25,7 @@ CREATE TABLE IF NOT EXISTS members (
   room_number TEXT,
   hotel_room TEXT,
   room_partner TEXT,
+  cohort TEXT DEFAULT 'legacy',
   ledger JSONB DEFAULT '{}'::jsonb,
   created_at TIMESTAMPTZ DEFAULT now(),
   updated_at TIMESTAMPTZ DEFAULT now()
@@ -32,6 +33,8 @@ CREATE TABLE IF NOT EXISTS members (
 
 CREATE INDEX IF NOT EXISTS idx_members_ref ON members(payment_ref);
 CREATE INDEX IF NOT EXISTS idx_members_conf ON members(conference_code);
+-- Add cohort column if upgrading an existing database
+ALTER TABLE members ADD COLUMN IF NOT EXISTS cohort TEXT DEFAULT 'legacy';
 
 CREATE TABLE IF NOT EXISTS entries (
   id TEXT PRIMARY KEY,

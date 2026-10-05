@@ -16,12 +16,13 @@ export function makeTransport(){
 }
 
 // ─── Domain constants (must mirror the frontend) ───
-const CONTRIB_MONTHS = [
-  {key:'2026-06',label:'Jun 2026'},{key:'2026-07',label:'Jul 2026'},{key:'2026-08',label:'Aug 2026'},
-  {key:'2026-09',label:'Sep 2026'},{key:'2026-10',label:'Oct 2026'},{key:'2026-11',label:'Nov 2026'},
-  {key:'2026-12',label:'Dec 2026'},{key:'2027-01',label:'Jan 2027'},{key:'2027-02',label:'Feb 2027'},
-  {key:'2027-03',label:'Mar 2027'},{key:'2027-04',label:'Apr 2027'},{key:'2027-05',label:'May 2027'},
-];
+const REG_TOTAL = 5700;
+const SCHEDULES = {
+  legacy: ['2026-06','2026-07','2026-08','2026-09','2026-10','2026-11','2026-12','2027-01','2027-02','2027-03','2027-04','2027-05'],
+  new:    ['2026-10','2026-11','2026-12','2027-01','2027-02','2027-03','2027-04','2027-05'],
+  regonly:['2026-10','2026-11','2026-12'],
+};
+const r2 = n => parseFloat(n.toFixed(2));
 const OPTIONS = {
   'OPT-1':{hotel:'Sandton Sun',type:'Not Sharing',total:2122.92,accom:1647.92,reg:475},
   'OPT-2':{hotel:'Sandton Sun',type:'Sharing',total:1382.29,accom:907.29,reg:475},
@@ -29,21 +30,34 @@ const OPTIONS = {
   'OPT-4':{hotel:'Sandton Towers',type:'Sharing',total:1361.29,accom:886.29,reg:475},
   'OPT-5':{hotel:'Garden Court',type:'Not Sharing',total:1222.92,accom:747.92,reg:475},
   'OPT-6':{hotel:'Garden Court',type:'Sharing',total:909.38,accom:434.38,reg:475},
-  'OPT-7':{hotel:'N/A',type:'Once Off Payment',total:0,accom:0,reg:0,flexAmount:true},
+  'REG-ONLY':{hotel:'Registration Only',type:'No Accommodation',total:r2(REG_TOTAL/3),accom:0,reg:r2(REG_TOTAL/3),scheduleKey:'regonly'},
+  'CAP-S':{hotel:'The Capital',type:'Single B&B',total:r2((12250+REG_TOTAL)/8),accom:r2(12250/8),reg:r2(REG_TOTAL/8),scheduleKey:'new'},
+  'CAP-SH':{hotel:'The Capital',type:'Sharing B&B (per person)',total:r2((6900+REG_TOTAL)/8),accom:r2(6900/8),reg:r2(REG_TOTAL/8),scheduleKey:'new'},
+  'CAT-S':{hotel:'The Catalyst',type:'Single B&B',total:r2((7950+REG_TOTAL)/8),accom:r2(7950/8),reg:r2(REG_TOTAL/8),scheduleKey:'new'},
+  'CAT-SH':{hotel:'The Catalyst',type:'Sharing B&B (per person)',total:r2((4725+REG_TOTAL)/8),accom:r2(4725/8),reg:r2(REG_TOTAL/8),scheduleKey:'new'},
 };
 function fmt(n){ return 'R'+Number(n).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g,','); }
-function elapsedMonths(){
+function memberSchedule(m){
+  const opt = OPTIONS[m.accommodationOption];
+  if(opt && opt.scheduleKey==='regonly') return SCHEDULES.regonly;
+  if(m.cohort==='new') return SCHEDULES.new;
+  return SCHEDULES.legacy;
+}
+function monthLabel(k){ const [y,mm]=k.split('-'); return ['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][+mm]+' '+y; }
+function elapsedMonths(m){
   const now=new Date(); const nk=now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0');
-  return CONTRIB_MONTHS.filter(m=>m.key<=nk && m.key>='2026-06');
+  return memberSchedule(m).filter(k=>k<=nk);
 }
 
 // ─── Build professional HTML statement (mirrors the letter preview) ───
 export function buildStatementHTML(m, entries, settings={}){
   const opt = OPTIONS[m.accommodationOption]||{};
   const isFlex = opt.flexAmount;
-  const totalExp12 = isFlex?0:m.expectedMonthlyTotal*12;
-  const totalReg12 = isFlex?0:m.expectedReg*12;
-  const totalAccom12 = isFlex?0:m.expectedAccom*12;
+  const mSched = memberSchedule(m);
+  const nMo = mSched.length;
+  const totalExp12 = isFlex?0:r2(m.expectedMonthlyTotal*nMo);
+  const totalReg12 = isFlex?0:r2(m.expectedReg*nMo);
+  const totalAccom12 = isFlex?0:r2(m.expectedAccom*nMo);
   const deadline = settings.deadline || '31 May 2027';
   const finsecName = settings.finsecName || 'Mr Dumisani Mphasane';
   const fromEmail = FROM_EMAIL;
@@ -57,12 +71,12 @@ export function buildStatementHTML(m, entries, settings={}){
   const isFullyPaid = !isFlex && outstanding<=0.05;
   const monthsCovered = (!isFlex && m.expectedMonthlyTotal>0) ? Math.floor(actualPaid/m.expectedMonthlyTotal) : 0;
   const excess = (!isFlex && m.expectedMonthlyTotal>0) ? actualPaid-(monthsCovered*m.expectedMonthlyTotal) : 0;
-  const elapsed = elapsedMonths();
+  const elapsed = elapsedMonths(m);
 
   let scheduleRows='';
-  CONTRIB_MONTHS.forEach((mo,idx)=>{
+  mSched.map(k=>({key:k,label:monthLabel(k)})).forEach((mo,idx)=>{
     let amtRec='—', dateRec='—', status='Not Yet Due', bg='#fafafa', color='#6b7280';
-    const isElapsed = elapsed.some(e=>e.key===mo.key);
+    const isElapsed = elapsed.some(e=>e===mo.key);
     if(!isFlex && idx<monthsCovered){
       amtRec=fmt(m.expectedMonthlyTotal);
       const e=uniqueEntries[Math.min(idx,uniqueEntries.length-1)];
@@ -118,7 +132,7 @@ export function buildStatementHTML(m, entries, settings={}){
       <tr><td style="color:#6b7280;width:220px;">Option</td><td><strong>${m.accommodationOption}${opt.hotel&&opt.hotel!=='N/A'?' – '+opt.hotel+' ('+opt.type+')':' – Once Off / Flexible'}</strong></td></tr>
       <tr><td style="color:#6b7280;">Biennial Registration</td><td>${isFlex?'Flexible':fmt(m.expectedReg)+'/mo ('+fmt(totalReg12)+' total)'}</td></tr>
       <tr><td style="color:#6b7280;">Accommodation</td><td>${isFlex?'Flexible':fmt(m.expectedAccom)+'/mo ('+fmt(totalAccom12)+' total)'}</td></tr>
-      <tr><td style="color:#1a3a6b;font-weight:700;">Total (12 months)</td><td style="font-weight:700;">${isFlex?'Flexible':fmt(totalExp12)}</td></tr>
+      <tr><td style="color:#1a3a6b;font-weight:700;">Total (${nMo} months)</td><td style="font-weight:700;">${isFlex?'Flexible':fmt(totalExp12)}</td></tr>
     </table>
     <div style="font-weight:700;color:#1a3a6b;margin:14px 0 6px;">PAYMENT SCHEDULE & STATUS</div>
     <table style="width:100%;border-collapse:collapse;font-size:12px;">
@@ -129,7 +143,7 @@ export function buildStatementHTML(m, entries, settings={}){
     <div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:6px;padding:12px;margin:14px 0;">
       <div style="font-weight:700;color:#1a3a6b;margin-bottom:6px;">BALANCE SUMMARY</div>
       <table style="width:100%;font-size:13px;">
-        <tr><td>Total Amount Due (12 mo)</td><td style="text-align:right;font-weight:700;">${isFlex?'Flexible':fmt(totalExp12)}</td></tr>
+        <tr><td>Total Amount Due (${nMo} mo)</td><td style="text-align:right;font-weight:700;">${isFlex?'Flexible':fmt(totalExp12)}</td></tr>
         <tr><td>Total Received to Date</td><td style="text-align:right;font-weight:700;color:#16a34a;">${fmt(actualPaid)}</td></tr>
         <tr style="border-top:2px solid #1a3a6b;"><td style="font-weight:800;">Balance Outstanding</td><td style="text-align:right;font-weight:800;color:${isFullyPaid?'#16a34a':'#dc2626'};">${isFullyPaid?'NIL – FULLY PAID':fmt(outstanding)}</td></tr>
       </table>

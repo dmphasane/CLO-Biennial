@@ -85,7 +85,7 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--muted);}
 
     <div class="card">
       <div class="card-title">Select Accommodation Option</div>
-      <div class="alert alert-info">Each option includes Biennial Registration (R475.00/month) + Accommodation. Select your preferred hotel and room type below.</div>
+      <div class="alert alert-info">Each hotel option includes Biennial Registration (R5,700 total) + Accommodation, spread over 8 months (Oct 2026 – May 2027). Registration Only is spread over 3 months (Oct – Dec 2026).</div>
       <div id="options-list"></div>
     </div>
 
@@ -99,8 +99,8 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--muted);}
             <tr><td>Biennial Registration (monthly)</td><td class="val" id="s-reg"></td></tr>
             <tr><td>Accommodation (monthly)</td><td class="val" id="s-accom"></td></tr>
             <tr><td style="font-weight:700;">Monthly Instalment</td><td class="val" style="font-size:16px;color:var(--primary);" id="s-total"></td></tr>
-            <tr><td>Total over 12 months</td><td class="val" id="s-total12"></td></tr>
-            <tr><td>Period</td><td class="val">June 2026 – May 2027</td></tr>
+            <tr><td>Total Commitment</td><td class="val" id="s-total12"></td></tr>
+            <tr><td>Period</td><td class="val" id="s-period">October 2026 onwards</td></tr>
           </table>
         </div>
         <div class="bank-box">
@@ -142,14 +142,18 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--muted);}
 </div>
 
 <script>
+// NEW member registration (Oct 2026 cohort). New sign-ups choose from these
+// options only; the legacy Sandton/Garden Court options are closed to new members.
+const REG_TOTAL = 5700;
+const SCHED_NEW = ['2026-10','2026-11','2026-12','2027-01','2027-02','2027-03','2027-04','2027-05']; // 8 months
+const SCHED_REGONLY = ['2026-10','2026-11','2026-12']; // 3 months
+const r2 = n => parseFloat(n.toFixed(2));
 const OPTIONS = {
-  'OPT-1': { hotel:'Sandton Sun', type:'Not Sharing', total:2122.92, accom:1647.92, reg:475.00 },
-  'OPT-2': { hotel:'Sandton Sun', type:'Sharing',     total:1382.29, accom: 907.29, reg:475.00 },
-  'OPT-3': { hotel:'Sandton Towers', type:'Not Sharing', total:2247.92, accom:1772.92, reg:475.00 },
-  'OPT-4': { hotel:'Sandton Towers', type:'Sharing',     total:1361.29, accom: 886.29, reg:475.00 },
-  'OPT-5': { hotel:'Garden Court',   type:'Not Sharing', total:1222.92, accom: 747.92, reg:475.00 },
-  'OPT-6': { hotel:'Garden Court',   type:'Sharing',     total: 909.38, accom: 434.38, reg:475.00 },
-  'OPT-7': { hotel:'N/A', type:'Once Off Payment', total:0, accom:0, reg:0, onceOff:true, flexAmount:true },
+  'REG-ONLY': { hotel:'Registration Only', type:'No Accommodation', total:r2(REG_TOTAL/3), accom:0, reg:r2(REG_TOTAL/3), months:3, regOnly:true },
+  'CAP-S':  { hotel:'The Capital',  type:'Single B&B',               total:r2((12250+REG_TOTAL)/8), accom:r2(12250/8), reg:r2(REG_TOTAL/8), months:8 },
+  'CAP-SH': { hotel:'The Capital',  type:'Sharing B&B (per person)', total:r2((6900+REG_TOTAL)/8),  accom:r2(6900/8),  reg:r2(REG_TOTAL/8), months:8 },
+  'CAT-S':  { hotel:'The Catalyst', type:'Single B&B',               total:r2((7950+REG_TOTAL)/8),  accom:r2(7950/8),  reg:r2(REG_TOTAL/8), months:8 },
+  'CAT-SH': { hotel:'The Catalyst', type:'Sharing B&B (per person)', total:r2((4725+REG_TOTAL)/8),  accom:r2(4725/8),  reg:r2(REG_TOTAL/8), months:8 },
 };
 let selectedOpt = null;
 function fmt(n){ return 'R'+Number(n).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g,','); }
@@ -158,20 +162,15 @@ function normalize(ref){ return (ref||'').toUpperCase().replace(/\s+/g,' ').trim
 // Render option cards
 const list = document.getElementById('options-list');
 Object.entries(OPTIONS).forEach(([key, o])=>{
-  if(o.flexAmount) return; // skip OPT-7 for now
-  const icon = o.hotel.includes('Sun')?'☀️':o.hotel.includes('Tower')?'🏢':'🌿';
+  const icon = o.regOnly?'📋':o.hotel.includes('Capital')?'🏨':'🏢';
+  const period = o.regOnly ? 'Oct–Dec 2026 (3 months)' : 'Oct 2026–May 2027 (8 months)';
   list.innerHTML += `<div class="option-card" id="opt-${key}" onclick="selectOption('${key}')">
     <div class="hotel">${icon} ${o.hotel}</div>
     <div class="type">${o.type}</div>
     <div class="price">${fmt(o.total)}/mo</div>
-    <div style="font-size:11px;color:var(--muted);margin-top:4px;">Accom: ${fmt(o.accom)} + Reg: ${fmt(o.reg)}</div>
+    <div style="font-size:11px;color:var(--muted);margin-top:4px;">${o.regOnly?'Registration only':'Accom: '+fmt(o.accom)+' + Reg: '+fmt(o.reg)} · ${period}</div>
   </div>`;
 });
-list.innerHTML += `<div class="option-card" id="opt-OPT-7" onclick="selectOption('OPT-7')">
-  <div class="hotel">📋 Once Off / Flexible Payment</div>
-  <div class="type">Pay in full or custom arrangement</div>
-  <div class="price">Flexible</div>
-</div>`;
 
 function selectOption(key){
   selectedOpt=key;
@@ -181,11 +180,12 @@ function selectOption(key){
   const sec=document.getElementById('summary-section');
   sec.classList.remove('hidden');
   document.getElementById('s-option').textContent=key;
-  document.getElementById('s-hotel').textContent=o.flexAmount?'Flexible / TBD':`${o.hotel} – ${o.type}`;
-  document.getElementById('s-reg').textContent=o.flexAmount?'Flexible':fmt(o.reg);
-  document.getElementById('s-accom').textContent=o.flexAmount?'Flexible':fmt(o.accom);
-  document.getElementById('s-total').textContent=o.flexAmount?'Flexible':fmt(o.total);
-  document.getElementById('s-total12').textContent=o.flexAmount?'Flexible':fmt(o.total*12);
+  document.getElementById('s-hotel').textContent=`${o.hotel} – ${o.type}`;
+  document.getElementById('s-reg').textContent=fmt(o.reg);
+  document.getElementById('s-accom').textContent=fmt(o.accom);
+  document.getElementById('s-total').textContent=fmt(o.total);
+  document.getElementById('s-total12').textContent=fmt(o.total*o.months)+' ('+o.months+' months)';
+  const pEl=document.getElementById('s-period'); if(pEl) pEl.textContent = o.regOnly ? 'October – December 2026' : 'October 2026 – May 2027';
   // Generate reference
   const name=document.getElementById('r-name').value.trim();
   const conf=document.getElementById('r-conf').value;
@@ -220,11 +220,12 @@ async function submitRegistration(){
     fullName:name, conferenceCode:conf, localChurch:church,
     email:email, phone:phone, accommodationOption:selectedOpt,
     expectedMonthlyTotal:o.total, expectedAccom:o.accom, expectedReg:o.reg,
-    paymentRef:ref, registrationDate:new Date().toISOString().split('T')[0]
+    paymentRef:ref, registrationDate:new Date().toISOString().split('T')[0],
+    cohort:'new'   // all public registrations are the new (Oct 2026) cohort
   };
 
-  // Build member with ledger
-  const MONTHS=['2026-06','2026-07','2026-08','2026-09','2026-10','2026-11','2026-12','2027-01','2027-02','2027-03','2027-04','2027-05'];
+  // Build member with ledger for the correct schedule (3 or 8 months)
+  const MONTHS = o.regOnly ? SCHED_REGONLY : SCHED_NEW;
   member.id='ID-'+Math.random().toString(36).substr(2,9).toUpperCase();
   member.ledger={};
   MONTHS.forEach(mk=>{member.ledger[mk]={status:'NOT_PAID',entryId:null,received:0,accom:0,reg:0};});
@@ -262,8 +263,8 @@ async function submitRegistration(){
       <table>
         <tr><td>Name</td><td class="val">${name}</td></tr>
         <tr><td>Conference</td><td class="val">${conf}</td></tr>
-        <tr><td>Option</td><td class="val">${selectedOpt} – ${o.flexAmount?'Flexible':o.hotel+' ('+o.type+')'}</td></tr>
-        <tr><td>Monthly Payment</td><td class="val">${o.flexAmount?'Flexible':fmt(o.total)}</td></tr>
+        <tr><td>Option</td><td class="val">${selectedOpt} – ${o.hotel+' ('+o.type+')'}</td></tr>
+        <tr><td>Monthly Payment</td><td class="val">${fmt(o.total)}</td></tr>
         <tr><td>Payment Reference</td><td class="val" style="color:var(--primary);font-size:15px;">${ref}</td></tr>
       </table>
     </div>
@@ -289,13 +290,13 @@ function sendRegistrationEmail(member){
     'Church: '+(member.localChurch||'—')+'\n'+
     'Email: '+member.email+'\n'+
     'Phone: '+member.phone+'\n'+
-    'Option: '+member.accommodationOption+(o.flexAmount?' (Flexible)':' – '+o.hotel+' '+o.type)+'\n'+
-    'Monthly: '+(o.flexAmount?'Flexible':fmt(o.total))+'\n'+
+    'Option: '+member.accommodationOption+' – '+o.hotel+' '+o.type+'\n'+
+    'Monthly: '+fmt(o.total)+'\n'+
     'Reference: '+member.paymentRef+'\n'+
     'Date: '+member.registrationDate+'\n'
   );
   // Open mailto silently (if it fails, registration is still saved locally)
-  try{ window.open('mailto:financial.secretary@nedlo.org.za?subject='+subject+'&body='+body,'_blank'); } catch(e){}
+  try{ window.open('mailto:nedloregistration@gmail.com?subject='+subject+'&body='+body,'_blank'); } catch(e){}
 }
 </script>
 </body>

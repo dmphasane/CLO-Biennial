@@ -104,15 +104,22 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--muted);}
   <footer>NEDLO Biennial 2027 Stokvel Fund • 19th Episcopal District Lay Organisation</footer>
 </div>
 <script>
-const OPTIONS={'OPT-1':{hotel:'Sandton Sun',type:'Not Sharing',total:2122.92,accom:1647.92,reg:475},'OPT-2':{hotel:'Sandton Sun',type:'Sharing',total:1382.29,accom:907.29,reg:475},'OPT-3':{hotel:'Sandton Towers',type:'Not Sharing',total:2247.92,accom:1772.92,reg:475},'OPT-4':{hotel:'Sandton Towers',type:'Sharing',total:1361.29,accom:886.29,reg:475},'OPT-5':{hotel:'Garden Court',type:'Not Sharing',total:1222.92,accom:747.92,reg:475},'OPT-6':{hotel:'Garden Court',type:'Sharing',total:909.38,accom:434.38,reg:475},'OPT-7':{hotel:'N/A',type:'Once Off',total:0,flex:true}};
+const REG_TOTAL=5700;const r2=n=>parseFloat(n.toFixed(2));
+const OPTIONS={
+  'REG-ONLY':{hotel:'Registration Only',type:'No Accommodation',total:r2(REG_TOTAL/3),accom:0,reg:r2(REG_TOTAL/3),months:3,regOnly:true},
+  'CAP-S':{hotel:'The Capital',type:'Single B&B',total:r2((12250+REG_TOTAL)/8),accom:r2(12250/8),reg:r2(REG_TOTAL/8),months:8},
+  'CAP-SH':{hotel:'The Capital',type:'Sharing B&B (per person)',total:r2((6900+REG_TOTAL)/8),accom:r2(6900/8),reg:r2(REG_TOTAL/8),months:8},
+  'CAT-S':{hotel:'The Catalyst',type:'Single B&B',total:r2((7950+REG_TOTAL)/8),accom:r2(7950/8),reg:r2(REG_TOTAL/8),months:8},
+  'CAT-SH':{hotel:'The Catalyst',type:'Sharing B&B (per person)',total:r2((4725+REG_TOTAL)/8),accom:r2(4725/8),reg:r2(REG_TOTAL/8),months:8}
+};
 let sel=null;
 function fmt(n){return'R'+Number(n).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g,',');}
 const list=document.getElementById('options-list');
 Object.entries(OPTIONS).forEach(([k,o])=>{
-  const icon=o.hotel.includes('Sun')?'☀️':o.hotel.includes('Tower')?'🏢':o.hotel==='N/A'?'📋':'🌿';
-  list.innerHTML+=`<div class="option-card" id="o-${k}" onclick="pick('${k}')"><div class="hotel">${icon} ${o.flex?'Once Off / Flexible':o.hotel}</div><div class="type">${o.type}</div><div class="price">${o.flex?'Flex':fmt(o.total)+'/mo'}</div></div>`;
+  const icon=o.regOnly?'📋':o.hotel.includes('Capital')?'🏨':'🏢';
+  list.innerHTML+=`<div class="option-card" id="o-${k}" onclick="pick('${k}')"><div class="hotel">${icon} ${o.hotel}</div><div class="type">${o.type}</div><div class="price">${fmt(o.total)}/mo</div></div>`;
 });
-function pick(k){sel=k;document.querySelectorAll('.option-card').forEach(c=>c.classList.remove('selected'));document.getElementById('o-'+k).classList.add('selected');const o=OPTIONS[k];document.getElementById('summary-section').classList.remove('hidden');document.getElementById('s-option').textContent=k;document.getElementById('s-hotel').textContent=o.flex?'Flexible':o.hotel+' – '+o.type;document.getElementById('s-total').textContent=o.flex?'Flexible':fmt(o.total);document.getElementById('s-total12').textContent=o.flex?'Flexible':fmt(o.total*12);const n=document.getElementById('r-name').value.trim(),c=document.getElementById('r-conf').value;document.getElementById('s-ref').textContent=(c&&n)?(c+'-'+n).toUpperCase():'[Enter name & conference above]';}
+function pick(k){sel=k;document.querySelectorAll('.option-card').forEach(c=>c.classList.remove('selected'));document.getElementById('o-'+k).classList.add('selected');const o=OPTIONS[k];document.getElementById('summary-section').classList.remove('hidden');document.getElementById('s-option').textContent=k;document.getElementById('s-hotel').textContent=o.hotel+' – '+o.type;document.getElementById('s-total').textContent=fmt(o.total);document.getElementById('s-total12').textContent=fmt(o.total*o.months)+' ('+o.months+' mo)';const n=document.getElementById('r-name').value.trim(),c=document.getElementById('r-conf').value;document.getElementById('s-ref').textContent=(c&&n)?(c+'-'+n).toUpperCase():'[Enter name & conference above]';}
 ['r-name','r-conf'].forEach(id=>document.getElementById(id).addEventListener('input',()=>{if(sel)pick(sel);}));
 function submitReg(){
   const n=document.getElementById('r-name').value.trim(),c=document.getElementById('r-conf').value,ch=document.getElementById('r-church').value.trim(),e=document.getElementById('r-email').value.trim(),p=document.getElementById('r-phone').value.trim();
@@ -122,11 +129,11 @@ function submitReg(){
   const subject=encodeURIComponent('NEDLO Stokvel Registration – '+n);
   const body=encodeURIComponent('NEDLO BIENNIAL 2027 STOKVEL FUND – NEW REGISTRATION\n\n'+
     'Full Name: '+n+'\nConference: '+c+'\nLocal Church: '+(ch||'—')+'\nEmail: '+e+'\nPhone: '+p+'\n'+
-    'Option: '+sel+(o.flex?' (Flexible)':' – '+o.hotel+' '+o.type)+'\n'+
-    'Monthly: '+(o.flex?'Flexible':fmt(o.total))+'\nTotal (12mo): '+(o.flex?'Flexible':fmt(o.total*12))+'\n'+
+    'Option: '+sel+' – '+o.hotel+' '+o.type+'\n'+
+    'Monthly: '+fmt(o.total)+'\nTotal ('+o.months+'mo): '+fmt(o.total*o.months)+'\n'+
     'Payment Reference: '+ref+'\nDate: '+new Date().toLocaleDateString('en-ZA')+'\n\n'+
     'Please add me to the Stokvel Fund register.\n\nRegards,\n'+n);
-  window.location.href='mailto:financial.secretary@nedlo.org.za?cc='+encodeURIComponent(e)+'&subject='+subject+'&body='+body;
+  window.location.href='mailto:nedloregistration@gmail.com?cc='+encodeURIComponent(e)+'&subject='+subject+'&body='+body;
   document.getElementById('reg-form').classList.add('hidden');
   document.getElementById('reg-success').classList.remove('hidden');
   document.getElementById('success-details').innerHTML=`<div class="bank-box"><table><tr><td class="lbl">Your Reference</td><td style="font-weight:800;color:var(--primary);font-size:16px;">${ref}</td></tr><tr><td class="lbl">Account</td><td>63211345582 (FNB)</td></tr><tr><td class="lbl">Branch</td><td>250655</td></tr></table></div>`;

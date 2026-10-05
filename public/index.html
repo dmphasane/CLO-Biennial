@@ -200,6 +200,7 @@ select[multiple]{height:auto;min-height:80px;}
         <div class="flex gap-2">
           <button class="btn btn-outline btn-sm" onclick="importMembersCSV()">📥 Import CSV</button>
           <button class="btn btn-outline btn-sm" onclick="exportMembersCSV()">📤 Export CSV</button>
+          <button class="btn btn-outline btn-sm" onclick="flagLegacyMembers()" title="Mark members registered before 1 Oct 2026 as the legacy (Jun–May 12-month) cohort">🏷 Flag Legacy</button>
           <button class="btn btn-primary btn-sm" onclick="openMemberModal()">+ Add Member</button>
         </div>
       </div>
@@ -514,13 +515,21 @@ select[multiple]{height:auto;min-height:80px;}
       <div class="col-half">
         <div class="form-group"><label>Accommodation Option *</label>
           <select id="m-option" onchange="updateExpected()">
+            <optgroup label="— New Options (Oct 2026 cohort) —">
+            <option value="REG-ONLY">Registration Only – R1 900.00/mo (Oct–Dec)</option>
+            <option value="CAP-S">The Capital – Single B&B – R2 243.75/mo</option>
+            <option value="CAP-SH">The Capital – Sharing B&B (pp) – R1 575.00/mo</option>
+            <option value="CAT-S">The Catalyst – Single B&B – R1 706.25/mo</option>
+            <option value="CAT-SH">The Catalyst – Sharing B&B (pp) – R1 303.13/mo</option>
+            </optgroup>
+            <optgroup label="— Existing Hotels —">
             <option value="OPT-1">OPT-1 – Sandton Sun Not Sharing – R2 122.92/mo</option>
             <option value="OPT-2">OPT-2 – Sandton Sun Sharing – R1 382.29/mo</option>
             <option value="OPT-3">OPT-3 – Sandton Towers Not Sharing – R2 247.92/mo</option>
             <option value="OPT-4">OPT-4 – Sandton Towers Sharing – R1 361.29/mo</option>
             <option value="OPT-5">OPT-5 – Garden Court Not Sharing – R1 222.92/mo</option>
             <option value="OPT-6">OPT-6 – Garden Court Sharing – R909.38/mo</option>
-            <option value="OPT-7">OPT-7 – Once Off Payment – Flexible amount</option>
+            </optgroup>
           </select></div>
       </div>
     </div>
@@ -636,7 +645,7 @@ select[multiple]{height:auto;min-height:80px;}
     <div class="modal-title">Import Members via CSV</div>
     <div class="alert alert-info mb-4">
       CSV must have columns (in order): <strong>FullName, ConferenceCode, LocalChurch, Email, Phone, AccommodationOption</strong><br/>
-      AccommodationOption: OPT-1 through OPT-6. Existing members with same reference will be updated.
+      AccommodationOption: OPT-1 to OPT-6 (existing hotels), or REG-ONLY / CAP-S / CAP-SH / CAT-S / CAT-SH (new options). Existing members with same reference will be updated. Imported members default to the <strong>legacy</strong> cohort — use "🏷 Flag Legacy" to confirm, or they'll switch to new if they picked a new-only option.
     </div>
     <div class="form-group"><label>Select CSV File</label>
       <input type="file" id="import-csv-file" accept=".csv" onchange="previewImportCSV(event)"/>
@@ -655,7 +664,14 @@ select[multiple]{height:auto;min-height:80px;}
 // ═══════════════════════════════════════════════════════════
 // CONSTANTS & DOMAIN DATA
 // ═══════════════════════════════════════════════════════════
-const OPTIONS = {
+// ── Cohort schedules ──
+const SCHEDULES = {
+  legacy: { start:'2026-06', months:['2026-06','2026-07','2026-08','2026-09','2026-10','2026-11','2026-12','2027-01','2027-02','2027-03','2027-04','2027-05'] },
+  new:    { start:'2026-10', months:['2026-10','2026-11','2026-12','2027-01','2027-02','2027-03','2027-04','2027-05'] },
+  regonly:{ start:'2026-10', months:['2026-10','2026-11','2026-12'] },
+};
+const REG_TOTAL = 5700;
+const OPTIONS_LEGACY = {
   'OPT-1': { hotel:'Sandton Sun', type:'Not Sharing', total:2122.92, accom:1647.92, reg:475.00 },
   'OPT-2': { hotel:'Sandton Sun', type:'Sharing',     total:1382.29, accom: 907.29, reg:475.00 },
   'OPT-3': { hotel:'Sandton Towers', type:'Not Sharing', total:2247.92, accom:1772.92, reg:475.00 },
@@ -664,6 +680,22 @@ const OPTIONS = {
   'OPT-6': { hotel:'Garden Court',   type:'Sharing',     total: 909.38, accom: 434.38, reg:475.00 },
   'OPT-7': { hotel:'N/A',            type:'Once Off Payment', total:0, accom:0, reg:0, onceOff:true, flexAmount:true },
 };
+function monthly(accomTotal, months){ return parseFloat(((accomTotal + REG_TOTAL)/months).toFixed(2)); }
+const OPTIONS_NEW = {
+  'REG-ONLY': { hotel:'Registration Only', type:'No Accommodation', accomTotal:0, regTotal:REG_TOTAL,
+                total: parseFloat((REG_TOTAL/3).toFixed(2)), accom:0, reg: parseFloat((REG_TOTAL/3).toFixed(2)), scheduleKey:'regonly' },
+  'CAP-S':    { hotel:'The Capital', type:'Single B&B', accomTotal:12250, regTotal:REG_TOTAL,
+                total: monthly(12250,8), accom: parseFloat((12250/8).toFixed(2)), reg: parseFloat((REG_TOTAL/8).toFixed(2)), scheduleKey:'new' },
+  'CAP-SH':   { hotel:'The Capital', type:'Sharing B&B (per person)', accomTotal:6900, regTotal:REG_TOTAL,
+                total: monthly(6900,8), accom: parseFloat((6900/8).toFixed(2)), reg: parseFloat((REG_TOTAL/8).toFixed(2)), scheduleKey:'new' },
+  'CAT-S':    { hotel:'The Catalyst', type:'Single B&B', accomTotal:7950, regTotal:REG_TOTAL,
+                total: monthly(7950,8), accom: parseFloat((7950/8).toFixed(2)), reg: parseFloat((REG_TOTAL/8).toFixed(2)), scheduleKey:'new' },
+  'CAT-SH':   { hotel:'The Catalyst', type:'Sharing B&B (per person)', accomTotal:4725, regTotal:REG_TOTAL,
+                total: monthly(4725,8), accom: parseFloat((4725/8).toFixed(2)), reg: parseFloat((REG_TOTAL/8).toFixed(2)), scheduleKey:'new' },
+  'OPT-1': OPTIONS_LEGACY['OPT-1'], 'OPT-2': OPTIONS_LEGACY['OPT-2'], 'OPT-3': OPTIONS_LEGACY['OPT-3'],
+  'OPT-4': OPTIONS_LEGACY['OPT-4'], 'OPT-5': OPTIONS_LEGACY['OPT-5'], 'OPT-6': OPTIONS_LEGACY['OPT-6'],
+};
+const OPTIONS = Object.assign({}, OPTIONS_LEGACY, OPTIONS_NEW);
 const CONF_CODES = ['ECLO','NCLO','WCLO','OCLO','MMMCLO'];
 const CONF_NAMES = { ECLO:'East', NCLO:'Natal', WCLO:'West', OCLO:'Orangia', MMMCLO:'M M Mokone' };
 const CONF_TARGETS = { ECLO:100, NCLO:60, WCLO:120, OCLO:100, MMMCLO:100 };
@@ -687,6 +719,27 @@ const QUARTERS = {
   Q3:['2026-12','2027-01','2027-02'],
   Q4:['2027-03','2027-04','2027-05'],
 };
+
+// ── Per-member schedule ──
+function memberSchedule(m){
+  const opt = OPTIONS[m.accommodationOption];
+  if(opt && opt.scheduleKey==='regonly') return SCHEDULES.regonly.months;
+  if(m.cohort === 'new') return SCHEDULES.new.months;
+  return SCHEDULES.legacy.months;
+}
+function memberMonths(m){ return memberSchedule(m).length; }
+// Full expected commitment for a member (monthly × their number of months)
+function memberExpectedTotal(m){
+  const opt = OPTIONS[m.accommodationOption];
+  if(opt?.flexAmount) return 0;
+  return parseFloat((m.expectedMonthlyTotal * memberMonths(m)).toFixed(2));
+}
+// Elapsed months WITHIN a member's own schedule (for compliance calcs)
+function memberElapsed(m){
+  const now = currentMonthKey();
+  return memberSchedule(m).filter(mk => mk <= now);
+}
+
 // Demo credentials (NFR-001)
 const USERS = {
   treasurer:             { pass:'Treasurer@2027', name:'Ms Given Phusoane',    role:'Treasurer' },
@@ -844,11 +897,18 @@ function auditLog(action, detail){
   saveDB();
 }
 function updateAllMemberRates(){
+  // IMPORTANT: Legacy members keep their locked-in amounts & 12-month schedule.
+  // We only auto-correct members on NEW options (new cohort), whose rates are
+  // derived from the fixed OPTIONS_NEW table. Legacy members are never overwritten
+  // here so their existing reconciliation is preserved.
   let updated = 0;
   DB.members.forEach(m=>{
     const o = OPTIONS[m.accommodationOption];
     if(!o) return;
     if(o.flexAmount) return; // skip flex members
+    // Only members on the new-option codes get auto-synced to the OPTIONS_NEW rates.
+    const isNewOption = ['REG-ONLY','CAP-S','CAP-SH','CAT-S','CAT-SH'].includes(m.accommodationOption);
+    if(!isNewOption) return; // legacy OPT-1..6 amounts are locked — never overwrite
     if(m.expectedMonthlyTotal !== o.total || m.expectedAccom !== o.accom || m.expectedReg !== o.reg){
       m.expectedMonthlyTotal = o.total;
       m.expectedAccom = o.accom;
@@ -993,13 +1053,16 @@ function saveMember(){
   const dup = DB.members.find(m=> m.paymentRef===ref && m.id !== editingMemberId);
   if(dup){ errEl.textContent='Payment reference '+ref+' already exists for another member.'; errEl.style.display='block'; return; }
 
+  // Determine cohort: new option codes => 'new' cohort; legacy OPT-x keep existing cohort
+  const isNewOption = ['REG-ONLY','CAP-S','CAP-SH','CAT-S','CAT-SH'].includes(opt);
   if(editingMemberId){
     const idx = DB.members.findIndex(m=>m.id===editingMemberId);
     const old = DB.members[idx];
     DB.members[idx] = { ...old, fullName, conferenceCode:conf, localChurch:church,
       accommodationOption:opt, email, phone,
       expectedMonthlyTotal:o.total, expectedAccom:o.accom, expectedReg:o.reg,
-      paymentRef:ref };
+      paymentRef:ref,
+      cohort: old.cohort || (isNewOption ? 'new' : 'legacy') };
     auditLog('MemberEdit', 'Edited member '+ref);
   } else {
     const newM = {
@@ -1007,20 +1070,20 @@ function saveMember(){
       accommodationOption:opt, email, phone,
       expectedMonthlyTotal:o.total, expectedAccom:o.accom, expectedReg:o.reg,
       paymentRef:ref, registrationDate: today(),
-      ledger: {} // key: 'YYYY-MM' => slot
+      cohort: isNewOption ? 'new' : 'new', // members added now default to 'new' cohort
+      ledger: {}
     };
-    // EVT-007: create 12 empty slots (or 1 slot for once-off)
     const isOnceOff = OPTIONS[opt]?.onceOff;
     if(isOnceOff){
-      // Once-off: expect a single payment in any month
-      CONTRIB_MONTHS.forEach(m=>{ newM.ledger[m.key]={ status:'NOT_APPLICABLE', entryId:null, received:0, accom:0, reg:0 }; });
+      memberSchedule(newM).forEach(mk=>{ newM.ledger[mk]={ status:'NOT_APPLICABLE', entryId:null, received:0, accom:0, reg:0 }; });
       newM.ledger['ONCE_OFF']={ status:'NOT_PAID', entryId:null, received:0, accom:0, reg:0 };
-      newM.expectedMonthlyTotal = o.total; // full amount
+      newM.expectedMonthlyTotal = o.total;
     } else {
-      CONTRIB_MONTHS.forEach(m=>{ newM.ledger[m.key]={ status:'NOT_PAID', entryId:null, received:0, accom:0, reg:0 }; });
+      // Create slots for the member's own schedule
+      memberSchedule(newM).forEach(mk=>{ newM.ledger[mk]={ status:'NOT_PAID', entryId:null, received:0, accom:0, reg:0 }; });
     }
     DB.members.push(newM);
-    auditLog('MemberAdd', 'Added member '+ref);
+    auditLog('MemberAdd', 'Added member '+ref+' (cohort: '+newM.cohort+')');
   }
   saveDB();
   closeMemberModal();
@@ -1038,9 +1101,10 @@ function viewMemberLedger(id){
 function forcRecalcLedger(){
   if(!ledgerMemberId) return;
   const m = DB.members.find(x=>x.id===ledgerMemberId); if(!m) return;
-  // Reset ledger
+  // Reset ledger (member's own schedule)
   m.ledger={};
-  CONTRIB_MONTHS.forEach(mk=>{ m.ledger[mk.key]={status:'NOT_PAID',entryId:null,received:0,accom:0,reg:0}; });
+  const sched = memberSchedule(m);
+  sched.forEach(mk=>{ m.ledger[mk]={status:'NOT_PAID',entryId:null,received:0,accom:0,reg:0}; });
   // Re-allocate all matched entries for this member in chronological order
   const memberEntries = DB.entries
     .filter(e=>e.linkedMemberId===m.id && e.matchStatus==='MATCHED')
@@ -1050,8 +1114,8 @@ function forcRecalcLedger(){
   memberEntries.forEach(e=>{
     const monthsCovered = (isFlexAmount || expected<=0) ? 1 : Math.max(1, Math.round(e.creditAmount/expected));
     let allocated = 0;
-    for(let j=0; j<CONTRIB_MONTHS.length && allocated<monthsCovered; j++){
-      const mk = CONTRIB_MONTHS[j].key;
+    for(let j=0; j<sched.length && allocated<monthsCovered; j++){
+      const mk = sched[j];
       // Find unpaid slots in order from June 2026 onwards
       if(!m.ledger[mk]) m.ledger[mk]={status:'NOT_PAID',entryId:null,received:0,accom:0,reg:0};
       if(m.ledger[mk].status==='NOT_PAID'){
@@ -1072,7 +1136,9 @@ function forcRecalcLedger(){
 }
 function renderLedgerBody(m){
   const isFlexAmount = OPTIONS[m.accommodationOption]?.flexAmount;
-  const totalExp12 = isFlexAmount ? 0 : m.expectedMonthlyTotal*12;
+  const sched = memberSchedule(m);
+  const nMonths = sched.length;
+  const totalExp12 = isFlexAmount ? 0 : memberExpectedTotal(m);
   // All entries linked to this member
   const entries = DB.entries.filter(e=>e.linkedMemberId===m.id).sort((a,b)=>a.txnDate.localeCompare(b.txnDate));
   const totalReceived = entries.filter(e=>e.matchStatus==='MATCHED').reduce((s,e)=>s+e.creditAmount,0);
@@ -1080,17 +1146,18 @@ function renderLedgerBody(m){
   const isFullyPaid = !isFlexAmount && outstanding<=0.05;
   let html = `<div class="${isFullyPaid?'alert alert-success':'alert alert-warn'} mb-4">
     ${isFullyPaid?'✅ <strong>FULLY PAID</strong>':'⚠ <strong>Outstanding: '+fmt(outstanding)+'</strong>'}
-    &nbsp;|&nbsp; Total Expected (12 mo): <strong>${isFlexAmount?'Flex':fmt(totalExp12)}</strong>
+    &nbsp;|&nbsp; Total Expected (${nMonths} mo): <strong>${isFlexAmount?'Flex':fmt(totalExp12)}</strong>
     &nbsp;|&nbsp; Total Matched Entries: <strong>${fmt(totalReceived)}</strong>
     &nbsp;|&nbsp; Entries: <strong>${entries.length}</strong>
   </div>`;
   // Month-by-month ledger
-  html+=`<div style="font-weight:700;margin-bottom:6px;color:var(--primary);">Month Allocations</div>`;
+  html+=`<div style="font-weight:700;margin-bottom:6px;color:var(--primary);">Month Allocations (${m.cohort||'legacy'} cohort)</div>`;
   html+=`<div class="table-wrap mb-4"><table><thead><tr>
     <th>Month</th><th class="text-right">Expected</th><th class="text-right">Received</th>
     <th class="text-right">Accom</th><th class="text-right">Reg</th><th>Status</th><th>Linked Entry</th>
   </tr></thead><tbody>`;
-  CONTRIB_MONTHS.forEach(mo=>{
+  const monthLabel = (k)=>{ const [y,mm]=k.split('-'); return ['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][+mm]+' '+y; };
+  sched.map(k=>({key:k,label:monthLabel(k)})).forEach(mo=>{
     const slot=m.ledger?.[mo.key];
     const entry=slot?.entryId?DB.entries.find(e=>e.id===slot.entryId):null;
     const isPaid=slot?.status==='PAID';
@@ -1204,9 +1271,10 @@ function executeMerge(){
   // Remove the duplicate
   DB.members = DB.members.filter(x=>x.id!==target.id);
   
-  // Recalculate primary's ledger
+  // Recalculate primary's ledger (its own schedule)
+  const pSched = memberSchedule(primary);
   primary.ledger={};
-  CONTRIB_MONTHS.forEach(mk=>{ primary.ledger[mk.key]={status:'NOT_PAID',entryId:null,received:0,accom:0,reg:0}; });
+  pSched.forEach(mk=>{ primary.ledger[mk]={status:'NOT_PAID',entryId:null,received:0,accom:0,reg:0}; });
   const memberEntries = DB.entries.filter(e=>e.linkedMemberId===primary.id && e.matchStatus==='MATCHED')
     .sort((a,b)=>a.txnDate.localeCompare(b.txnDate));
   const expected = primary.expectedMonthlyTotal;
@@ -1214,8 +1282,8 @@ function executeMerge(){
   memberEntries.forEach(e=>{
     const monthsCovered = (isFlexAmount || expected<=0) ? 1 : Math.max(1, Math.round(e.creditAmount/expected));
     let allocated=0;
-    for(let j=0; j<CONTRIB_MONTHS.length && allocated<monthsCovered; j++){
-      const mk=CONTRIB_MONTHS[j].key;
+    for(let j=0; j<pSched.length && allocated<monthsCovered; j++){
+      const mk=pSched[j];
       if(!primary.ledger[mk]) primary.ledger[mk]={status:'NOT_PAID',entryId:null,received:0,accom:0,reg:0};
       if(primary.ledger[mk].status==='NOT_PAID'){
         const monthAmt = isFlexAmount ? e.creditAmount : expected;
@@ -1275,7 +1343,7 @@ function renderMembersTable(){
       <td>${m.fullName}</td>
       <td><span class="badge" style="background:#dbeafe;color:#1e40af;">${m.conferenceCode}</span></td>
       <td>${m.localChurch||'—'}</td>
-      <td>${m.accommodationOption}${isOnceOff?' (Once Off)':''}</td>
+      <td>${m.accommodationOption}${isOnceOff?' (Once Off)':''} ${(m.cohort==='new')?'<span class="badge" style="background:#dcfce7;color:#15803d;font-size:9px;">NEW</span>':'<span class="badge" style="background:#f1f5f9;color:#64748b;font-size:9px;">LEG</span>'}</td>
       <td class="text-right">${isOnceOff ? fmt(m.expectedMonthlyTotal)+' (total)' : fmt(m.expectedMonthlyTotal)+'/mo'}</td>
       <td class="text-right">${fmt(m.expectedAccom)}</td>
       <td class="text-right">${fmt(m.expectedReg)}${isOnceOff?' (×12)':''}</td>
@@ -1410,8 +1478,14 @@ function detectOption(val){
   if(!val) return '';
   const v=val.toUpperCase().replace(/\s+/g,'').replace(/-/g,'');
   const vOriginal = val.toUpperCase().trim();
-  // Direct match: OPT-1 through OPT-6
+  // Direct match: OPT-1..6 and new codes (REG-ONLY, CAP-S, CAP-SH, CAT-S, CAT-SH)
   if(OPTIONS[vOriginal]) return vOriginal;
+  // New-option keyword detection
+  const lowerN = val.toLowerCase();
+  const sharingN = lowerN.includes('sharing') || lowerN.includes('share') || lowerN.includes('double') || lowerN.includes('twin') || lowerN.includes('per person') || lowerN.includes('pp');
+  if(lowerN.includes('registration only') || lowerN.includes('reg only') || lowerN.includes('reg-only') || v==='REGONLY') return 'REG-ONLY';
+  if(lowerN.includes('capital')) return sharingN ? 'CAP-SH' : 'CAP-S';
+  if(lowerN.includes('catalyst')) return sharingN ? 'CAT-SH' : 'CAT-S';
   if(OPTIONS['OPT-'+vOriginal.replace('OPT','').replace('-','')]) return 'OPT-'+vOriginal.replace('OPT','').replace('-','');
   // Check for OPT1 OPT2 etc without dash, or "Option 7"
   const optMatch = vOriginal.match(/OPT[\-\s]*([1-7])/);
@@ -1552,17 +1626,21 @@ function confirmImportMembers(){
       updated++;
     } else {
       if(DB.members.length>=500){ errors.push('Row '+(i+1)+': member limit 500 reached'); return; }
+      // CSV uploads are existing members → default to 'legacy' cohort unless they
+      // selected a new-only option, in which case they are 'new'.
+      const isNewOption = ['REG-ONLY','CAP-S','CAP-SH','CAT-S','CAT-SH'].includes(opt);
       const newM={ id:uid(), fullName, conferenceCode:conf,
         localChurch:mapped.church,
         accommodationOption:opt, email:mapped.email,
         phone:mapped.phone,
         expectedMonthlyTotal:o.total, expectedAccom:o.accom, expectedReg:o.reg,
-        paymentRef:ref, registrationDate:today(), ledger:{} };
+        paymentRef:ref, registrationDate:today(),
+        cohort: isNewOption ? 'new' : 'legacy', ledger:{} };
       if(o.onceOff){
-        CONTRIB_MONTHS.forEach(m=>{ newM.ledger[m.key]={ status:'NOT_APPLICABLE', entryId:null, received:0, accom:0, reg:0 }; });
+        memberSchedule(newM).forEach(mk=>{ newM.ledger[mk]={ status:'NOT_APPLICABLE', entryId:null, received:0, accom:0, reg:0 }; });
         newM.ledger['ONCE_OFF']={ status:'NOT_PAID', entryId:null, received:0, accom:0, reg:0 };
       } else {
-        CONTRIB_MONTHS.forEach(m=>{ newM.ledger[m.key]={ status:'NOT_PAID', entryId:null, received:0, accom:0, reg:0 }; });
+        memberSchedule(newM).forEach(mk=>{ newM.ledger[mk]={ status:'NOT_PAID', entryId:null, received:0, accom:0, reg:0 }; });
       }
       DB.members.push(newM); added++;
     }
@@ -1641,9 +1719,35 @@ function manualAddSkippedMember(idx){
   modal.style.display='flex';
 }
 
+// ── Flag existing members as the LEGACY cohort ──
+// Members registered before the new-cohort cut-off (1 Oct 2026) are flagged
+// 'legacy' so they keep the 12-month Jun–May schedule and their locked rates.
+// Members on new-only option codes are always 'new' regardless of date.
+function flagLegacyMembers(){
+  const cutoff = '2026-10-01';
+  const candidates = DB.members.filter(m=>{
+    const isNewOption = ['REG-ONLY','CAP-S','CAP-SH','CAT-S','CAT-SH'].includes(m.accommodationOption);
+    if(isNewOption) return false;
+    const regDate = (m.registrationDate||'').slice(0,10);
+    // Flag if registered before cut-off (or no date) and not already legacy
+    return (!regDate || regDate < cutoff) && m.cohort !== 'legacy';
+  });
+  if(!candidates.length){ alert('No members to flag. All eligible members are already on the legacy cohort (or use new-only options).'); return; }
+  if(!confirm(`Flag ${candidates.length} member(s) registered before 1 Oct 2026 as the LEGACY cohort (12-month Jun–May schedule)?\n\nTheir ledger month-slots will be rebuilt for Jun 2026 – May 2027 and matched payments re-allocated.`)) return;
+  let count=0;
+  candidates.forEach(m=>{
+    m.cohort='legacy';
+    recalcLedgerForMember(m.id);
+    count++;
+  });
+  saveDB(); renderAll();
+  auditLog('FlagLegacy',`Flagged ${count} members as legacy cohort`);
+  alert(`✅ Flagged ${count} member(s) as legacy. Their schedules now run Jun 2026 – May 2027.`);
+}
+
 function exportMembersCSV(){
-  const rows=[['MemberID','FullName','ConferenceCode','LocalChurch','Email','Phone','AccommodationOption','ExpectedMonthlyTotal','ExpectedAccom','ExpectedReg','PaymentReference','RegistrationDate']];
-  DB.members.forEach(m=>rows.push([m.id,m.fullName,m.conferenceCode,m.localChurch||'',m.email||'',m.phone||'',m.accommodationOption,m.expectedMonthlyTotal,m.expectedAccom,m.expectedReg,m.paymentRef,m.registrationDate]));
+  const rows=[['MemberID','FullName','ConferenceCode','LocalChurch','Email','Phone','AccommodationOption','ExpectedMonthlyTotal','ExpectedAccom','ExpectedReg','PaymentReference','RegistrationDate','Cohort']];
+  DB.members.forEach(m=>rows.push([m.id,m.fullName,m.conferenceCode,m.localChurch||'',m.email||'',m.phone||'',m.accommodationOption,m.expectedMonthlyTotal,m.expectedAccom,m.expectedReg,m.paymentRef,m.registrationDate,m.cohort||'legacy']));
   downloadCSV(rows,'NEDLO_Members_'+today()+'.csv');
   auditLog('MemberExport','Exported member register to CSV');
 }
@@ -2250,36 +2354,29 @@ function allocateEntry(entry, member, amount){
     return;
   }
   
-  // Use floor (not round) to determine how many FULL months this covers
-  // Excess carries over as credit toward the next month
+  // Use floor to determine how many FULL months this covers; excess carries over
   const monthsCovered = Math.floor(amount / expected);
+  const sched = memberSchedule(member); // member's own month list (12 or 8 or 3)
+  if(!member.ledger) member.ledger={};
   
   if(monthsCovered <= 1){
-    // Single month payment (or partial) — allocate to first unpaid month
     entry.allocatedReg = Math.min(member.expectedReg, amount);
     entry.allocatedAccom = parseFloat((amount - entry.allocatedReg).toFixed(2));
-    if(!member.ledger) member.ledger={};
-    // Find first unpaid month
-    let slotKey = entry.contribMonth;
-    for(let j=0; j<CONTRIB_MONTHS.length; j++){
-      const mk=CONTRIB_MONTHS[j].key;
+    let slotKey = null;
+    for(const mk of sched){
       if(!member.ledger[mk]) member.ledger[mk]={status:'NOT_PAID',entryId:null,received:0,accom:0,reg:0};
       if(member.ledger[mk].status==='NOT_PAID'){ slotKey=mk; break; }
     }
     if(!slotKey) return;
-    if(!member.ledger[slotKey]) member.ledger[slotKey]={status:'NOT_PAID',entryId:null,received:0,accom:0,reg:0};
     const slot = member.ledger[slotKey];
     slot.status='PAID'; slot.entryId=entry.id; slot.received=parseFloat(amount.toFixed(2));
     slot.accom=entry.allocatedAccom; slot.reg=entry.allocatedReg;
   } else {
-    // Multi-month payment — fill from first unpaid month
     entry.allocatedReg = parseFloat((member.expectedReg * monthsCovered).toFixed(2));
     entry.allocatedAccom = parseFloat((member.expectedAccom * monthsCovered).toFixed(2));
-    if(!member.ledger) member.ledger={};
-    
     let allocated = 0;
-    for(let j=0; j<CONTRIB_MONTHS.length && allocated<monthsCovered; j++){
-      const mk = CONTRIB_MONTHS[j].key;
+    for(const mk of sched){
+      if(allocated>=monthsCovered) break;
       if(!member.ledger[mk]) member.ledger[mk]={status:'NOT_PAID',entryId:null,received:0,accom:0,reg:0};
       if(member.ledger[mk].status==='NOT_PAID'){
         member.ledger[mk].status='PAID';
@@ -2296,7 +2393,7 @@ function clearAllEntries(){
   if(!confirm('Clear ALL imported bank entries? Member ledgers will be reset. Learned aliases will be KEPT. This cannot be undone.')) return;
   DB.entries=[];
   // Keep refAliases! They are learned matches.
-  DB.members.forEach(m=>{ m.ledger={}; CONTRIB_MONTHS.forEach(mk=>{ m.ledger[mk.key]={status:'NOT_PAID',entryId:null,received:0,accom:0,reg:0}; }); });
+  DB.members.forEach(m=>{ m.ledger={}; memberSchedule(m).forEach(mk=>{ m.ledger[mk]={status:'NOT_PAID',entryId:null,received:0,accom:0,reg:0}; }); });
   auditLog('ClearEntries','All bank entries cleared and ledgers reset (aliases kept)');
   saveDB(); renderAll();
 }
@@ -2321,8 +2418,8 @@ function rerunMatching(){
   // First reset ledgers for fresh allocation
   DB.members.forEach(m=>{
     if(!m.ledger) m.ledger={};
-    CONTRIB_MONTHS.forEach(mo=>{
-      if(!m.ledger[mo.key]) m.ledger[mo.key]={status:'NOT_PAID',entryId:null,received:0,accom:0,reg:0};
+    memberSchedule(m).forEach(mk=>{
+      if(!m.ledger[mk]) m.ledger[mk]={status:'NOT_PAID',entryId:null,received:0,accom:0,reg:0};
     });
   });
   
@@ -2354,44 +2451,41 @@ function recalcAllLedgers(){
     const o = OPTIONS[m.accommodationOption]; if(!o) return;
     const isFlexAmount = o.flexAmount;
     const expected = m.expectedMonthlyTotal;
-    // Reset ledger
+    // Reset ledger (member's own schedule)
+    const sched = memberSchedule(m);
     m.ledger={};
-    CONTRIB_MONTHS.forEach(mk=>{ m.ledger[mk.key]={status:'NOT_PAID',entryId:null,received:0,accom:0,reg:0}; });
+    sched.forEach(mk=>{ m.ledger[mk]={status:'NOT_PAID',entryId:null,received:0,accom:0,reg:0}; });
     // Get all matched entries for this member, sorted by date
     const memberEntries = DB.entries.filter(e=>e.linkedMemberId===m.id && e.matchStatus==='MATCHED')
       .sort((a,b)=>a.txnDate.localeCompare(b.txnDate));
     // Running balance approach: accumulate all payments, then fill months
     let runningCredit = 0;
     memberEntries.forEach(e=>{ runningCredit += e.creditAmount; });
-    // Now fill months from June until credit runs out
+    // Now fill months from the schedule start until credit runs out
     if(isFlexAmount){
-      // Flex: put full amount into first month
+      // Flex: put full amount into first month of schedule
       if(runningCredit>0 && memberEntries.length>0){
-        m.ledger['2026-06'].status='PAID';
-        m.ledger['2026-06'].entryId=memberEntries[0].id;
-        m.ledger['2026-06'].received=parseFloat(runningCredit.toFixed(2));
-        m.ledger['2026-06'].reg=runningCredit; m.ledger['2026-06'].accom=0;
+        const first = sched[0];
+        m.ledger[first].status='PAID';
+        m.ledger[first].entryId=memberEntries[0].id;
+        m.ledger[first].received=parseFloat(runningCredit.toFixed(2));
+        m.ledger[first].reg=runningCredit; m.ledger[first].accom=0;
       }
     } else {
-      // Fill months sequentially using running credit, tracking which entry pays which month
-      let creditLeft = 0;
-      let entryIdx = 0;
       // Process entries in order, filling months as credit accumulates
       let totalCredit = 0;
       const entryDates = {}; // month -> entry date
       memberEntries.forEach(e=>{
         totalCredit += e.creditAmount;
-        // Figure out how many total months this covers so far
         const monthsCoveredSoFar = Math.floor(totalCredit / expected);
-        // Assign this entry's date to any newly covered months
-        for(let j=0; j<CONTRIB_MONTHS.length && j<monthsCoveredSoFar; j++){
-          if(!entryDates[CONTRIB_MONTHS[j].key]) entryDates[CONTRIB_MONTHS[j].key] = e;
+        for(let j=0; j<sched.length && j<monthsCoveredSoFar; j++){
+          if(!entryDates[sched[j]]) entryDates[sched[j]] = e;
         }
       });
       // Now fill the ledger
       const totalMonthsCovered = expected>0 ? Math.floor(totalCredit / expected) : 0;
-      for(let j=0; j<CONTRIB_MONTHS.length && j<totalMonthsCovered; j++){
-        const mk = CONTRIB_MONTHS[j].key;
+      for(let j=0; j<sched.length && j<totalMonthsCovered; j++){
+        const mk = sched[j];
         const entry = entryDates[mk] || memberEntries[memberEntries.length-1];
         m.ledger[mk].status='PAID';
         m.ledger[mk].entryId=entry?.id||null;
@@ -2491,22 +2585,24 @@ function recalcLedgerForMember(memberId){
   const o = OPTIONS[m.accommodationOption]; if(!o) return;
   const isFlexAmount = o.flexAmount;
   const expected = m.expectedMonthlyTotal;
+  const sched = memberSchedule(m);
   m.ledger={};
-  CONTRIB_MONTHS.forEach(mk=>{ m.ledger[mk.key]={status:'NOT_PAID',entryId:null,received:0,accom:0,reg:0}; });
+  sched.forEach(mk=>{ m.ledger[mk]={status:'NOT_PAID',entryId:null,received:0,accom:0,reg:0}; });
   const entries = DB.entries.filter(e=>e.linkedMemberId===m.id && e.matchStatus==='MATCHED').sort((a,b)=>a.txnDate.localeCompare(b.txnDate));
   const totalPaid = entries.reduce((s,e)=>s+e.creditAmount,0);
   if(isFlexAmount || expected<=0){
     if(totalPaid>0 && entries.length){
-      m.ledger['2026-06'].status='PAID'; m.ledger['2026-06'].entryId=entries[0].id;
-      m.ledger['2026-06'].received=totalPaid; m.ledger['2026-06'].reg=totalPaid;
+      const first = sched[0];
+      m.ledger[first].status='PAID'; m.ledger[first].entryId=entries[0].id;
+      m.ledger[first].received=totalPaid; m.ledger[first].reg=totalPaid;
     }
     return;
   }
   const monthsCovered = Math.floor(totalPaid/expected);
   let running=0; const monthEntry={};
-  entries.forEach(e=>{ running+=e.creditAmount; const mc=Math.floor(running/expected); for(let j=0;j<CONTRIB_MONTHS.length&&j<mc;j++){ if(!monthEntry[CONTRIB_MONTHS[j].key]) monthEntry[CONTRIB_MONTHS[j].key]=e; } });
-  for(let j=0;j<CONTRIB_MONTHS.length&&j<monthsCovered;j++){
-    const mk=CONTRIB_MONTHS[j].key;
+  entries.forEach(e=>{ running+=e.creditAmount; const mc=Math.floor(running/expected); for(let j=0;j<sched.length&&j<mc;j++){ if(!monthEntry[sched[j]]) monthEntry[sched[j]]=e; } });
+  for(let j=0;j<sched.length&&j<monthsCovered;j++){
+    const mk=sched[j];
     m.ledger[mk].status='PAID'; m.ledger[mk].entryId=(monthEntry[mk]||entries[entries.length-1])?.id||null;
     m.ledger[mk].received=expected; m.ledger[mk].accom=m.expectedAccom; m.ledger[mk].reg=m.expectedReg;
   }
@@ -2805,8 +2901,11 @@ function renderDashboard(){
 
   DB.members.forEach(m=>{
     let missed=0;
-    elapsed.forEach(mo=>{
-      const slot=m.ledger?.[mo.key];
+    // Use the member's OWN elapsed schedule months, not the global list,
+    // so new-cohort members aren't penalised for pre-Oct 2026 months.
+    const mElapsed = memberElapsed(m);
+    mElapsed.forEach(mk=>{
+      const slot=m.ledger?.[mk];
       const exp=m.expectedMonthlyTotal;
       totalExpected += exp;
       if(slot?.status==='PAID'){ totalReceivedLedger+=slot.received||0; }
@@ -2958,8 +3057,8 @@ function renderDashboard(){
   DB.members.forEach(m=>{
     const cg=confGroups[m.conferenceCode]; if(!cg) return;
     cg.members++;
-    elapsed.forEach(mo=>{
-      const slot=m.ledger?.[mo.key];
+    memberElapsed(m).forEach(mk=>{
+      const slot=m.ledger?.[mk];
       cg.excTotal+=m.expectedMonthlyTotal;
       if(slot?.status==='PAID'){ cg.paid++; cg.recTotal+=slot.received; }
       else cg.missed++;
@@ -3017,9 +3116,9 @@ function renderConferenceBreakdown(){
     members.forEach(m=>{
       optCounts[m.accommodationOption] = (optCounts[m.accommodationOption]||0) + 1;
       let hasPaidAny = false;
-      elapsed.forEach(mo=>{
+      memberElapsed(m).forEach(mk=>{
         totalExpected += m.expectedMonthlyTotal;
-        const slot = m.ledger?.[mo.key];
+        const slot = m.ledger?.[mk];
         if(slot?.status==='PAID'){ totalReceived += slot.received; hasPaidAny=true; }
       });
       if(hasPaidAny) membersEverPaid++; else membersNeverPaid++;
@@ -3091,6 +3190,8 @@ function sortMembers(members){
 }
 
 function getSlotStatus(member, monthKey){
+  // Month outside this member's committed schedule → not applicable
+  if(!memberSchedule(member).includes(monthKey)) return 'N/A';
   const now=currentMonthKey();
   if(monthKey > now) return 'FUTURE';
   const slot=member.ledger?.[monthKey];
@@ -3107,6 +3208,8 @@ function runMonthlyReport(){
   // STD-004 summary
   let totExpected=0,totReceived=0,totAccom=0,totReg=0,paidCount=0;
   members.forEach(m=>{
+    // Only count members whose own schedule includes this month
+    if(!memberSchedule(m).includes(mk)) return;
     totExpected+=m.expectedMonthlyTotal;
     const slot=m.ledger?.[mk];
     if(slot?.status==='PAID'){ totReceived+=slot.received||0; totAccom+=slot.accom||0; totReg+=slot.reg||0; paidCount++; }
@@ -3201,8 +3304,11 @@ function runQuarterlyReport(){
       lastConf=m.conferenceCode;
       confTotals[lastConf]={exp:0,accom:0,reg:0,rec:0};
     }
-    let mthsPaid=0, accomRec=0, regRec=0, exp=0;
+    let mthsPaid=0, accomRec=0, regRec=0, exp=0, mthsExpected=0;
+    const mSchedSet = new Set(memberSchedule(m));
     months.forEach(mk=>{
+      if(!mSchedSet.has(mk)) return; // month not in member's schedule
+      mthsExpected++;
       exp+=m.expectedMonthlyTotal;
       const slot=m.ledger?.[mk];
       if(slot?.status==='PAID'){ mthsPaid++; accomRec+=slot.accom||0; regRec+=slot.reg||0; }
@@ -3216,7 +3322,7 @@ function runQuarterlyReport(){
       <td>${m.paymentRef}</td><td>${m.fullName}</td>
       <td><span class="badge" style="background:#dbeafe;color:#1e40af;">${m.conferenceCode}</span></td>
       <td>${m.accommodationOption}</td>
-      <td class="text-center">${months.length}</td>
+      <td class="text-center">${mthsExpected}</td>
       <td class="text-center">${mthsPaid}</td>
       <td class="text-right">${fmt(exp)}</td>
       <td class="text-right">${fmt(accomRec)}</td>
@@ -3282,15 +3388,23 @@ function runYTDReport(){
       lastConf=m.conferenceCode;
     }
     const isFlexAmount = OPTIONS[m.accommodationOption]?.flexAmount;
-    const totalReg12 = isFlexAmount ? 0 : m.expectedReg * 12;
-    const totalAccom12 = isFlexAmount ? 0 : m.expectedAccom * 12;
-    const totalExp12 = isFlexAmount ? 0 : m.expectedMonthlyTotal * 12;
+    const nMo = memberMonths(m);
+    const totalReg12 = isFlexAmount ? 0 : parseFloat((m.expectedReg * nMo).toFixed(2));
+    const totalAccom12 = isFlexAmount ? 0 : parseFloat((m.expectedAccom * nMo).toFixed(2));
+    const totalExp12 = isFlexAmount ? 0 : memberExpectedTotal(m);
+    const mSchedSet = new Set(memberSchedule(m));
     
     let totalPaid = 0;
     let monthCells = '';
     CONTRIB_MONTHS.forEach(mo=>{
       const slot = m.ledger?.[mo.key];
-      const isElapsed = elapsed.some(e=>e.key===mo.key);
+      const inSchedule = mSchedSet.has(mo.key);
+      const isElapsed = inSchedule && elapsed.some(e=>e.key===mo.key);
+      if(!inSchedule){
+        // Month not part of this member's committed schedule
+        monthCells += `<td class="text-center"><div style="font-size:10px;color:#d1d5db;">·</div></td>`;
+        return;
+      }
       if(slot?.status==='PAID'){
         const amt = slot.received||0;
         totalPaid += amt;
@@ -3339,8 +3453,8 @@ function runYTDReport(){
   const grandPct = grandTotalExp>0?((grandTotalPaid/grandTotalExp)*100).toFixed(1):'0.0';
   html+=`<tr class="subtotal-row">
     <td colspan="6">GRAND TOTAL (${members.length} members)</td>
-    <td class="text-right">${fmt(members.reduce((s,m)=>s+(OPTIONS[m.accommodationOption]?.flexAmount?0:m.expectedReg*12),0))}</td>
-    <td class="text-right">${fmt(members.reduce((s,m)=>s+(OPTIONS[m.accommodationOption]?.flexAmount?0:m.expectedAccom*12),0))}</td>
+    <td class="text-right">${fmt(members.reduce((s,m)=>s+(OPTIONS[m.accommodationOption]?.flexAmount?0:m.expectedReg*memberMonths(m)),0))}</td>
+    <td class="text-right">${fmt(members.reduce((s,m)=>s+(OPTIONS[m.accommodationOption]?.flexAmount?0:m.expectedAccom*memberMonths(m)),0))}</td>
     <td class="text-right font-bold">${fmt(grandTotalExp)}</td>
     <td colspan="12"></td>
     <td class="text-right font-bold" style="color:var(--success);">${fmt(grandTotalPaid)}</td>
@@ -3691,12 +3805,12 @@ function renderCommsTable(){
     if(statusF==='noemail' && m.email) return false;
     if(statusF==='outstanding'){
       const paid = DB.entries.filter(e=>e.linkedMemberId===m.id && e.matchStatus==='MATCHED').reduce((s,e)=>s+e.creditAmount,0);
-      const exp12 = OPTIONS[m.accommodationOption]?.flexAmount ? 0 : m.expectedMonthlyTotal * 12;
+      const exp12 = OPTIONS[m.accommodationOption]?.flexAmount ? 0 : memberExpectedTotal(m);
       if(exp12>0 && paid>=exp12) return false;
     }
     if(statusF==='current'){
       const paid = DB.entries.filter(e=>e.linkedMemberId===m.id && e.matchStatus==='MATCHED').reduce((s,e)=>s+e.creditAmount,0);
-      const exp12 = OPTIONS[m.accommodationOption]?.flexAmount ? 0 : m.expectedMonthlyTotal * 12;
+      const exp12 = OPTIONS[m.accommodationOption]?.flexAmount ? 0 : memberExpectedTotal(m);
       if(exp12>0 && paid<exp12) return false;
     }
     return true;
@@ -3716,7 +3830,7 @@ function renderCommsTable(){
     // Use actual matched bank entries for true total paid
     const actualPaid = DB.entries.filter(e=>e.linkedMemberId===m.id && e.matchStatus==='MATCHED').reduce((s,e)=>s+e.creditAmount,0);
     const isFlexAmount = OPTIONS[m.accommodationOption]?.flexAmount;
-    const totalExp12 = isFlexAmount ? 0 : m.expectedMonthlyTotal * 12;
+    const totalExp12 = isFlexAmount ? 0 : memberExpectedTotal(m);
     const outstanding = isFlexAmount ? 0 : Math.max(0, totalExp12 - actualPaid);
     const allPaid = isFlexAmount ? actualPaid>0 : outstanding<=0.05;
     html+=`<tr>
@@ -3743,9 +3857,11 @@ function generateLetterHTML(memberId, forEmail=false){
   const elapsed = elapsedMonths();
   const opt = OPTIONS[m.accommodationOption]||{};
   const isFlexAmount = opt.flexAmount;
-  const totalExpected12 = isFlexAmount ? 0 : m.expectedMonthlyTotal * 12;
-  const totalAccom12   = isFlexAmount ? 0 : m.expectedAccom * 12;
-  const totalReg12     = isFlexAmount ? 0 : m.expectedReg * 12;
+  const nMo = memberMonths(m);
+  const mSched = memberSchedule(m);
+  const totalExpected12 = isFlexAmount ? 0 : memberExpectedTotal(m);
+  const totalAccom12   = isFlexAmount ? 0 : parseFloat((m.expectedAccom * nMo).toFixed(2));
+  const totalReg12     = isFlexAmount ? 0 : parseFloat((m.expectedReg * nMo).toFixed(2));
   const letterDate = document.getElementById('comms-date')?.value || new Date().toLocaleDateString('en-ZA',{day:'2-digit',month:'long',year:'numeric'});
   const deadline   = document.getElementById('comms-deadline')?.value || '31 May 2027';
   const finsecName  = document.getElementById('comms-finsec-name')?.value || 'Mr Dumisani Mphasane';
@@ -3768,7 +3884,8 @@ function generateLetterHTML(memberId, forEmail=false){
   const uniqueEntries = [...new Map(memberEntries.map(e=>[e.id,e])).values()];
   const actualTotalPaid = uniqueEntries.reduce((s,e)=>s+e.creditAmount, 0);
 
-  CONTRIB_MONTHS.forEach((mo, moIdx)=>{
+  const letterMonthLabel = (k)=>{ const [y,mm]=k.split('-'); return ['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][+mm]+' '+y; };
+  mSched.map(k=>({key:k,label:letterMonthLabel(k)})).forEach((mo, moIdx)=>{
     const isElapsed = elapsed.some(e=>e.key===mo.key);
     const slot = m.ledger?.[mo.key];
     const amtDueAccom = isFlexAmount ? '—' : fmt(m.expectedAccom);
@@ -3846,8 +3963,8 @@ function generateLetterHTML(memberId, forEmail=false){
         <th style="padding:6px 10px;text-align:left;">Months Covered</th>
       </tr></thead><tbody>`;
     uniqueEntries.forEach(entry=>{
-      // Find which months this entry covers
-      const coveredMonths = CONTRIB_MONTHS.filter(mo=>m.ledger?.[mo.key]?.entryId===entry.id).map(mo=>mo.label);
+      // Find which months this entry covers (member's own schedule)
+      const coveredMonths = mSched.filter(k=>m.ledger?.[k]?.entryId===entry.id).map(k=>letterMonthLabel(k));
       paymentsReceivedHtml += `<tr style="border-bottom:1px solid #e5e7eb;">
         <td style="padding:5px 10px;">${entry.txnDate}</td>
         <td style="padding:5px 10px;text-align:right;font-weight:700;">${fmt(entry.creditAmount)}</td>
@@ -3921,9 +4038,9 @@ function generateLetterHTML(memberId, forEmail=false){
         <tr><td style="color:#6b7280;padding:2px 0;">Hotel / Room Type</td><td>${opt.hotel&&opt.hotel!=='N/A'?opt.hotel+' – '+opt.type:'Once Off / Flexible'}</td></tr>
         <tr><td style="color:#6b7280;padding:2px 0;">Biennial Registration Component</td><td><strong>${isFlexAmount?'Flexible':fmt(m.expectedReg)+' per month (R'+fmt(totalReg12).replace('R','')+' total)'}</strong></td></tr>
         <tr><td style="color:#6b7280;padding:2px 0;">Accommodation Component</td><td><strong>${isFlexAmount?'Flexible':fmt(m.expectedAccom)+' per month (R'+fmt(totalAccom12).replace('R','')+' total)'}</strong></td></tr>
-        <tr style="border-top:1px solid #bfdbfe;"><td style="color:#1a3a6b;font-weight:700;padding:4px 0;">Monthly Instalment (Total)</td><td style="font-weight:700;color:#1a3a6b;">${isFlexAmount?'Flexible':fmt(m.expectedMonthlyTotal)+' per month over 12 months'}</td></tr>
-        <tr><td style="color:#6b7280;padding:2px 0;">Total Contribution (12 months)</td><td><strong>${isFlexAmount?'Flexible':fmt(totalExpected12)}</strong></td></tr>
-        <tr><td style="color:#6b7280;padding:2px 0;">Contribution Period</td><td>June 2026 – May 2027</td></tr>
+        <tr style="border-top:1px solid #bfdbfe;"><td style="color:#1a3a6b;font-weight:700;padding:4px 0;">Monthly Instalment (Total)</td><td style="font-weight:700;color:#1a3a6b;">${isFlexAmount?'Flexible':fmt(m.expectedMonthlyTotal)+' per month over '+nMo+' months'}</td></tr>
+        <tr><td style="color:#6b7280;padding:2px 0;">Total Contribution (${nMo} months)</td><td><strong>${isFlexAmount?'Flexible':fmt(totalExpected12)}</strong></td></tr>
+        <tr><td style="color:#6b7280;padding:2px 0;">Contribution Period</td><td>${letterMonthLabel(mSched[0])} – ${letterMonthLabel(mSched[mSched.length-1])}</td></tr>
       </table>
     </div>
     <!-- EXCHANGE RATE NOTE -->
@@ -3970,8 +4087,8 @@ function generateLetterHTML(memberId, forEmail=false){
     <div style="background:#f9fafb;border:1px solid #e5e7eb;padding:10px 14px;margin-bottom:14px;border-radius:4px;">
       <div style="font-weight:700;color:#1a3a6b;margin-bottom:8px;font-size:13px;">3. BALANCE SUMMARY</div>
       <table style="width:100%;font-size:12.5px;">
-        <tr><td style="padding:3px 0;width:280px;color:#6b7280;">Biennial Registration (12 months)</td><td style="text-align:right;">${isFlexAmount?'Flexible':fmt(totalReg12)}</td><td style="text-align:right;color:#16a34a;">${fmt(totalRegPaid)} received</td></tr>
-        <tr><td style="padding:3px 0;color:#6b7280;">Accommodation (12 months)</td><td style="text-align:right;">${isFlexAmount?'Flexible':fmt(totalAccom12)}</td><td style="text-align:right;color:#16a34a;">${fmt(totalAccomPaid)} received</td></tr>
+        <tr><td style="padding:3px 0;width:280px;color:#6b7280;">Biennial Registration (${nMo} months)</td><td style="text-align:right;">${isFlexAmount?'Flexible':fmt(totalReg12)}</td><td style="text-align:right;color:#16a34a;">${fmt(totalRegPaid)} received</td></tr>
+        <tr><td style="padding:3px 0;color:#6b7280;">Accommodation (${nMo} months)</td><td style="text-align:right;">${isFlexAmount?'Flexible':fmt(totalAccom12)}</td><td style="text-align:right;color:#16a34a;">${fmt(totalAccomPaid)} received</td></tr>
         <tr style="border-top:1px solid #e5e7eb;"><td style="padding:5px 0;font-weight:700;">Total Amount Due (Full Option)</td><td style="text-align:right;font-weight:700;">${isFlexAmount?'Flexible':fmt(totalExpected12)}</td><td></td></tr>
         <tr><td style="padding:3px 0;font-weight:700;">Total Amount Received to Date</td><td colspan="2" style="text-align:right;font-weight:700;color:#16a34a;">${fmt(actualTotalPaid)}</td></tr>
         ${creditExcess>0.05?`<tr><td style="padding:3px 0;color:#2456a4;">Credit Balance (excess carried forward)</td><td colspan="2" style="text-align:right;font-weight:700;color:#2456a4;">-${fmt(creditExcess)}</td></tr>`:''}
@@ -4028,9 +4145,12 @@ function buildPlainTextStatement(m){
   const elapsed = elapsedMonths();
   const opt = OPTIONS[m.accommodationOption]||{};
   const isFlexAmount = opt.flexAmount;
-  const totalExpected12 = isFlexAmount ? 0 : m.expectedMonthlyTotal * 12;
-  const totalReg12 = isFlexAmount ? 0 : m.expectedReg * 12;
-  const totalAccom12 = isFlexAmount ? 0 : m.expectedAccom * 12;
+  const nMo = memberMonths(m);
+  const mSched = memberSchedule(m);
+  const ptMonthLabel = (k)=>{ const [y,mm]=k.split('-'); return ['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][+mm]+' '+y; };
+  const totalExpected12 = isFlexAmount ? 0 : memberExpectedTotal(m);
+  const totalReg12 = isFlexAmount ? 0 : parseFloat((m.expectedReg * nMo).toFixed(2));
+  const totalAccom12 = isFlexAmount ? 0 : parseFloat((m.expectedAccom * nMo).toFixed(2));
   const deadline = document.getElementById('comms-deadline')?.value||'31 May 2027';
   const finsecName = document.getElementById('comms-finsec-name')?.value||'Mr Dumisani Mphasane';
   const fromEmail = 'nedloregistration@gmail.com';
@@ -4068,12 +4188,12 @@ function buildPlainTextStatement(m){
   lines.push('   Biennial Registration: '+(isFlexAmount?'Flexible':fmt(m.expectedReg)+'/mo ('+fmt(totalReg12)+' total)'));
   lines.push('   Accommodation: '+(isFlexAmount?'Flexible':fmt(m.expectedAccom)+'/mo ('+fmt(totalAccom12)+' total)'));
   lines.push('   Monthly Instalment: '+(isFlexAmount?'Flexible':fmt(m.expectedMonthlyTotal)));
-  lines.push('   Total (12 months): '+(isFlexAmount?'Flexible':fmt(totalExpected12)));
+  lines.push('   Total ('+nMo+' months): '+(isFlexAmount?'Flexible':fmt(totalExpected12)));
   lines.push('');
   lines.push('2. PAYMENTS RECEIVED');
   if(uniqueEntries.length){
     uniqueEntries.forEach(e=>{
-      const covered = CONTRIB_MONTHS.filter(mo=>m.ledger?.[mo.key]?.entryId===e.id).map(mo=>mo.label);
+      const covered = mSched.filter(k=>m.ledger?.[k]?.entryId===e.id).map(k=>ptMonthLabel(k));
       lines.push('   '+e.txnDate+'  '+fmt(e.creditAmount)+'  ['+e.referenceRaw+']'+(covered.length?'  covers: '+covered.join(', '):''));
     });
   } else {
@@ -4082,8 +4202,8 @@ function buildPlainTextStatement(m){
   lines.push('   ----------------------------------------');
   lines.push('   TOTAL RECEIVED: '+fmt(actualPaid)+' ('+uniqueEntries.length+' payment(s))');
   lines.push('');
-  lines.push('3. PAYMENT SCHEDULE (Jun 2026 - May 2027)');
-  CONTRIB_MONTHS.forEach((mo, idx)=>{
+  lines.push('3. PAYMENT SCHEDULE ('+ptMonthLabel(mSched[0])+' - '+ptMonthLabel(mSched[mSched.length-1])+')');
+  mSched.map(k=>({key:k,label:ptMonthLabel(k)})).forEach((mo, idx)=>{
     let status;
     if(!isFlexAmount && idx < monthsCovered) status='RECEIVED';
     else if(elapsed.some(e=>e.key===mo.key)) status='OUTSTANDING';
@@ -4207,9 +4327,9 @@ function exportDashboard(format){
   let totalExp=0, totalRec=0, fullyCurrent=0, hasMissed=0;
   DB.members.forEach(m=>{
     let missed=0;
-    elapsed.forEach(mo=>{
+    memberElapsed(m).forEach(mk=>{
       totalExp+=m.expectedMonthlyTotal;
-      const slot=m.ledger?.[mo.key];
+      const slot=m.ledger?.[mk];
       if(slot?.status==='PAID') totalRec+=slot.received; else missed++;
     });
     if(missed===0) fullyCurrent++; else hasMissed++;
@@ -4242,9 +4362,9 @@ function exportDashboard(format){
     let confExp=0, confRec=0, everPaid=0, neverPaid=0;
     members.forEach(m=>{
       let paid=false;
-      elapsed.forEach(mo=>{
+      memberElapsed(m).forEach(mk=>{
         confExp+=m.expectedMonthlyTotal;
-        const slot=m.ledger?.[mo.key];
+        const slot=m.ledger?.[mk];
         if(slot?.status==='PAID'){confRec+=slot.received; paid=true;}
       });
       if(paid) everPaid++; else neverPaid++;
