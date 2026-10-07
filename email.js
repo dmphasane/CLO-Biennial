@@ -123,7 +123,13 @@ export function buildStatementHTML(m, entries, settings={}){
   const logoUrl = settings.logoUrl || '';
 
   const matched = (entries||[]).filter(e=>e.linkedMemberId===m.id && e.matchStatus==='MATCHED').sort((a,b)=>(a.txnDate||'').localeCompare(b.txnDate||''));
-  const uniqueEntries = [...new Map(matched.map(e=>[e.id,e])).values()];
+  // De-duplicate by TRANSACTION identity (date + amount + reference + description),
+  // NOT just by row id. This protects members from being credited twice if the
+  // same bank payment was accidentally imported as more than one entry row.
+  const fpKey = e => [ (e.txnDate||'').trim(), Number(e.creditAmount).toFixed(2),
+                       (e.referenceRaw||'').toUpperCase().replace(/\s+/g,' ').trim(),
+                       (e.description||'').toUpperCase().replace(/\s+/g,' ').trim() ].join('||');
+  const uniqueEntries = [...new Map(matched.map(e=>[e.fingerprint || fpKey(e), e])).values()];
   const actualPaid = uniqueEntries.reduce((s,e)=>s+Number(e.creditAmount),0);
   const outstanding = Math.max(0, totalExp12-actualPaid);
   const isFullyPaid = !isFlex && outstanding<=0.05;

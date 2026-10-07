@@ -287,6 +287,35 @@ app.post('/api/register', regLimiter, async (req, res)=>{
   res.json({ ok:true });
 });
 
+// ─── MAINTENANCE: purge duplicate bank entries (same txn imported twice) ───
+// A "true duplicate" = identical fingerprint OR identical date+amount+ref+desc.
+// Keeps the earliest-created row of each group, deletes the rest. Returns a report.
+app.post('/api/entries/dedupe', authRequired, async (req, res)=>{
+  try{
+    const r = await query('SELECT * FROM entries ORDER BY created_at ASC NULLS FIRST, id ASC');
+    const seen = new Map();
+    const toDelete = [];
+    const norm = s => (s||'').toUpperCase().replace(/\s+/g,' ').trim();
+    for(const e of r.rows){
+      const key = e.fingerprint && String(e.fingerprint).trim()
+        ? 'FP:'+e.fingerprint
+        : ['TX', (e.txn_date||'').trim(), Number(e.credit_amount).toFixed(2), norm(e.reference_raw), norm(e.description)].join('||');
+      if(seen.has(key)) toDelete.push(e.id);
+      else seen.set(key, e.id);
+    }
+    if(toDelete.length){
+      // delete in chunks to stay within parameter limits
+      for(let i=0;i<toDelete.length;i+=500){
+        const chunk = toDelete.slice(i,i+500);
+        const params = chunk.map((_,j)=>'$'+(j+1)).join(',');
+        await query(`DELETE FROM entries WHERE id IN (${params})`, chunk);
+      }
+    }
+    await logAudit(req.user, 'EntriesDedupe', `Removed ${toDelete.length} duplicate entries (kept ${seen.size})`);
+    res.json({ ok:true, removed: toDelete.length, kept: seen.size });
+  }catch(e){ console.error('dedupe error:', e.message); res.status(500).json({ error:String(e.message||e) }); }
+});
+
 // ─── CUSTOM STATIONS (public: used by registration forms + admin) ───
 // GET returns all user-added stations grouped by conference/district so the
 // registration dropdowns can merge them with the built-in hierarchy.

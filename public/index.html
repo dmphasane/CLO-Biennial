@@ -137,7 +137,7 @@ select[multiple]{height:auto;min-height:80px;}
       </select>
     </div>
     <button class="btn btn-primary" style="width:100%;justify-content:center;padding:12px;" onclick="doLogin()">Sign In</button>
-    <p style="text-align:center;margin-top:14px;font-size:11px;color:var(--muted);">Protected under POPIA. Authorised personnel only. <strong>v2.6-build8</strong></p>
+    <p style="text-align:center;margin-top:14px;font-size:11px;color:var(--muted);">Protected under POPIA. Authorised personnel only. <strong>v2.7-build9</strong></p>
   </div>
 </div>
 
@@ -259,6 +259,7 @@ select[multiple]{height:auto;min-height:80px;}
           <button class="btn btn-primary btn-sm" onclick="rerunMatching()">🔄 Re-run Matching</button>
           <button class="btn btn-warning btn-sm" onclick="recalcAllLedgers()">📊 Recalc All Ledgers</button>
           <button class="btn btn-warning btn-sm" onclick="findDuplicates()">🔍 Find Duplicates</button>
+          <button class="btn btn-danger btn-sm" onclick="purgeDuplicatePayments()" title="Server-side: permanently remove duplicate bank entries (same date, amount, reference & description imported more than once), keeping one of each, then recalculate all ledgers">🧹 Purge Duplicate Payments</button>
           <button class="btn btn-danger btn-sm" onclick="fullReset()">⚠️ Full Reset</button>
         </div>
         <div class="filter-bar">
@@ -904,6 +905,23 @@ function isoDate(str){
 function txnFingerprint(txnDate, ref, desc, amount){
   return [ isoDate(txnDate), amount.toFixed(2), normalize(ref||''), normalize(desc||'') ].join('||');
 }
+// De-duplicate a list of entries by TRANSACTION identity (not just row id), so a
+// member is never credited twice if the same payment exists as multiple rows.
+function dedupeEntries(list){
+  const seen = new Map();
+  (list||[]).forEach(e=>{
+    const key = (e.fingerprint && String(e.fingerprint).trim())
+      ? e.fingerprint
+      : txnFingerprint(e.txnDate, e.referenceRaw, e.description, Number(e.creditAmount));
+    if(!seen.has(key)) seen.set(key, e);
+  });
+  return [...seen.values()];
+}
+// Total matched amount for a member, de-duplicated so duplicate rows never over-count.
+function memberPaid(memberId){
+  return dedupeEntries(DB.entries.filter(e=>e.linkedMemberId===memberId && e.matchStatus==='MATCHED'))
+    .reduce((s,e)=>s+Number(e.creditAmount),0);
+}
 function monthKey(dateStr){
   const d = parseDate(dateStr);
   if(!d) return null;
@@ -1177,7 +1195,7 @@ function renderLedgerBody(m){
   const totalExp12 = isFlexAmount ? 0 : memberExpectedTotal(m);
   // All entries linked to this member
   const entries = DB.entries.filter(e=>e.linkedMemberId===m.id).sort((a,b)=>a.txnDate.localeCompare(b.txnDate));
-  const totalReceived = entries.filter(e=>e.matchStatus==='MATCHED').reduce((s,e)=>s+e.creditAmount,0);
+  const totalReceived = memberPaid(m.id);
   const outstanding = Math.max(0, totalExp12-totalReceived);
   const isFullyPaid = !isFlexAmount && outstanding<=0.05;
   let html = `<div class="${isFullyPaid?'alert alert-success':'alert alert-warn'} mb-4">
@@ -1280,9 +1298,7 @@ function findDuplicateMembers(){
   const groups = [];
   const used = new Set();
 
-  function paidTotal(m){
-    return DB.entries.filter(e=>e.linkedMemberId===m.id && e.matchStatus==='MATCHED').reduce((s,e)=>s+e.creditAmount,0);
-  }
+  function paidTotal(m){ return memberPaid(m.id); }
 
   for(let i=0;i<members.length;i++){
     if(used.has(members[i].id)) continue;
@@ -2728,6 +2744,30 @@ function recalcAllLedgers(){
   alert(`Recalculated ${count} member ledgers. All allocations now use current rates.`);
 }
 
+// ── Server-side purge of duplicate payments, then full reload + recalc ──
+// Fixes members whose statements over-counted because the same bank payment was
+// imported as multiple entry rows (keeps one of each true duplicate).
+async function purgeDuplicatePayments(){
+  if(!confirm('Permanently remove DUPLICATE bank entries (same date, amount, reference and description imported more than once)?\n\nOne copy of each payment is kept. All member ledgers are then recalculated from the clean data. This fixes over-counted statements.')) return;
+  try{
+    if(typeof apiFetch !== 'function' || !AUTH_TOKEN){ alert('You must be signed in to the server to run this.'); return; }
+    await flushSync(); // make sure the server has the latest entries first
+    const r = await apiFetch('/api/entries/dedupe', { method:'POST', body: JSON.stringify({}) });
+    // Reload clean data from the server and rebuild every ledger
+    await loadDB();
+    recalcAllLedgersSilent();
+    saveDB(); renderAll();
+    auditLog('PurgeDuplicates', `Removed ${r.removed} duplicate entries (kept ${r.kept})`);
+    alert(`✅ Removed ${r.removed} duplicate payment entries. ${r.kept} unique entries kept.\n\nAll ledgers have been recalculated. Member statements will now reflect the correct amounts.`);
+  }catch(e){
+    alert('Purge failed: '+(e&&e.message?e.message:e));
+  }
+}
+// Recalculate every member's ledger from scratch WITHOUT prompting (used after a purge)
+function recalcAllLedgersSilent(){
+  DB.members.forEach(m=>{ recalcLedgerForMember(m.id); });
+}
+
 // ── Find TRUE duplicate bank entries (same transaction imported twice) ──
 function findDuplicates(){
   // A true duplicate = identical amount AND date AND reference AND description.
@@ -2815,7 +2855,7 @@ function recalcLedgerForMember(memberId){
   const sched = memberSchedule(m);
   m.ledger={};
   sched.forEach(mk=>{ m.ledger[mk]={status:'NOT_PAID',entryId:null,received:0,accom:0,reg:0}; });
-  const entries = DB.entries.filter(e=>e.linkedMemberId===m.id && e.matchStatus==='MATCHED').sort((a,b)=>a.txnDate.localeCompare(b.txnDate));
+  const entries = dedupeEntries(DB.entries.filter(e=>e.linkedMemberId===m.id && e.matchStatus==='MATCHED')).sort((a,b)=>a.txnDate.localeCompare(b.txnDate));
   const totalPaid = entries.reduce((s,e)=>s+e.creditAmount,0);
   if(isFlexAmount || expected<=0){
     if(totalPaid>0 && entries.length){
@@ -4087,12 +4127,12 @@ function renderCommsTable(){
     if(search && !m.fullName.toLowerCase().includes(search) && !m.paymentRef.toLowerCase().includes(search)) return false;
     if(statusF==='noemail' && m.email) return false;
     if(statusF==='outstanding'){
-      const paid = DB.entries.filter(e=>e.linkedMemberId===m.id && e.matchStatus==='MATCHED').reduce((s,e)=>s+e.creditAmount,0);
+      const paid = memberPaid(m.id);
       const exp12 = OPTIONS[m.accommodationOption]?.flexAmount ? 0 : memberExpectedTotal(m);
       if(exp12>0 && paid>=exp12) return false;
     }
     if(statusF==='current'){
-      const paid = DB.entries.filter(e=>e.linkedMemberId===m.id && e.matchStatus==='MATCHED').reduce((s,e)=>s+e.creditAmount,0);
+      const paid = memberPaid(m.id);
       const exp12 = OPTIONS[m.accommodationOption]?.flexAmount ? 0 : memberExpectedTotal(m);
       if(exp12>0 && paid<exp12) return false;
     }
@@ -4110,8 +4150,8 @@ function renderCommsTable(){
   </tr></thead><tbody>`;
 
   members.forEach(m=>{
-    // Use actual matched bank entries for true total paid
-    const actualPaid = DB.entries.filter(e=>e.linkedMemberId===m.id && e.matchStatus==='MATCHED').reduce((s,e)=>s+e.creditAmount,0);
+    // Use actual matched bank entries for true total paid (de-duplicated)
+    const actualPaid = memberPaid(m.id);
     const isFlexAmount = OPTIONS[m.accommodationOption]?.flexAmount;
     const totalExp12 = isFlexAmount ? 0 : memberExpectedTotal(m);
     const outstanding = isFlexAmount ? 0 : Math.max(0, totalExp12 - actualPaid);
@@ -4165,7 +4205,7 @@ function generateLetterHTML(memberId, forEmail=false){
   // Get all actual payments for this member (unique entries by ID)
   const memberEntries = DB.entries.filter(e=>e.linkedMemberId===m.id && e.matchStatus==='MATCHED')
     .sort((a,b)=>a.txnDate.localeCompare(b.txnDate));
-  const uniqueEntries = [...new Map(memberEntries.map(e=>[e.id,e])).values()];
+  const uniqueEntries = dedupeEntries(memberEntries);
   const actualTotalPaid = uniqueEntries.reduce((s,e)=>s+e.creditAmount, 0);
 
   const letterMonthLabel = (k)=>{ const [y,mm]=k.split('-'); return ['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][+mm]+' '+y; };
@@ -4474,7 +4514,7 @@ function buildPlainTextStatement(m){
   const surname = m.fullName.trim().split(' ').pop();
 
   const entries = DB.entries.filter(e=>e.linkedMemberId===m.id && e.matchStatus==='MATCHED').sort((a,b)=>a.txnDate.localeCompare(b.txnDate));
-  const uniqueEntries = [...new Map(entries.map(e=>[e.id,e])).values()];
+  const uniqueEntries = dedupeEntries(entries);
   const actualPaid = uniqueEntries.reduce((s,e)=>s+e.creditAmount,0);
   const outstanding = Math.max(0, totalExpected12 - actualPaid);
   const isFullyPaid = !isFlexAmount && outstanding<=0.05;
