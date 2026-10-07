@@ -137,7 +137,7 @@ select[multiple]{height:auto;min-height:80px;}
       </select>
     </div>
     <button class="btn btn-primary" style="width:100%;justify-content:center;padding:12px;" onclick="doLogin()">Sign In</button>
-    <p style="text-align:center;margin-top:14px;font-size:11px;color:var(--muted);">Protected under POPIA. Authorised personnel only. <strong>v2.9-build11</strong></p>
+    <p style="text-align:center;margin-top:14px;font-size:11px;color:var(--muted);">Protected under POPIA. Authorised personnel only. <strong>v3.0-build12</strong></p>
   </div>
 </div>
 
@@ -261,6 +261,7 @@ select[multiple]{height:auto;min-height:80px;}
           <button class="btn btn-warning btn-sm" onclick="findDuplicates()">🔍 Find Duplicates</button>
           <button class="btn btn-danger btn-sm" onclick="purgeDuplicatePayments()" title="Server-side: permanently remove duplicate bank entries (same date, amount, reference & description imported more than once), keeping one of each, then recalculate all ledgers">🧹 Purge Duplicate Payments</button>
           <button class="btn btn-outline btn-sm" onclick="diagnoseEntries()" title="Show a read-only report of entry counts, totals, and the biggest same-amount+reference clusters">🩺 Diagnose Entries</button>
+          <button class="btn btn-primary btn-sm" onclick="reloadFromServer()" title="Discard the local cached copy and reload the authoritative data from the server (fixes stale/doubled figures)">♻️ Reload from Server</button>
           <button class="btn btn-danger btn-sm" onclick="fullReset()">⚠️ Full Reset</button>
         </div>
         <div class="filter-bar">
@@ -2743,6 +2744,24 @@ function recalcAllLedgers(){
   saveDB(); renderAll();
   auditLog('RecalcAllLedgers',`Recalculated ledgers for ${count} members with current rates`);
   alert(`Recalculated ${count} member ledgers. All allocations now use current rates.`);
+}
+
+// ── Discard local cache and reload the authoritative data from the server ──
+// Fixes stale/doubled dashboard figures caused by an old localStorage snapshot.
+async function reloadFromServer(){
+  if(!confirm('Reload all data fresh from the server and discard the local cached copy on this browser?\n\nThis fixes figures that look doubled or out of date. No data is deleted on the server.')) return;
+  try{
+    if(typeof apiLoadAll !== 'function' || !AUTH_TOKEN){ alert('You must be signed in to the server.'); return; }
+    clearTimeout(_apiSaveTimer);          // cancel any pending debounced push of stale data
+    localStorage.removeItem('nedlo_db');  // drop the stale local snapshot
+    DB = await apiLoadAll();               // authoritative server data
+    if(!DB.uploads) DB.uploads = [];
+    if(!DB.refAliases) DB.refAliases = {};
+    localStorage.setItem('nedlo_db', JSON.stringify(DB));
+    renderAll();
+    const total = DB.entries.reduce((s,e)=>s+Number(e.creditAmount||0),0);
+    alert('Reloaded from server.\n\nEntries: '+DB.entries.length+'\nTotal bank credits: '+fmt(total)+'\n\nThe dashboard now reflects the authoritative server figures.');
+  }catch(e){ alert('Reload failed: '+(e&&e.message?e.message:e)); }
 }
 
 // ── Read-only diagnostic: shows what's actually stored on the server ──
