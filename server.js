@@ -298,7 +298,7 @@ app.post('/api/register', regLimiter, async (req, res)=>{
 // ─── DIAGNOSTIC: entry statistics (read-only) ───
 // Reports counts, totals, and the biggest clusters so we can see where any
 // inflation comes from. Grouped by amount+reference and by amount+reference+date.
-app.get('/api/debug/entry-stats', authRequired, async (req, res)=>{
+app.get('/api/debug/entry-stats', async (req, res)=>{
   try{
     const all = await query('SELECT txn_date, credit_amount, reference_raw, description, match_status, fingerprint FROM entries');
     const rows = all.rows;

@@ -2748,8 +2748,14 @@ function recalcAllLedgers(){
 // ── Read-only diagnostic: shows what's actually stored on the server ──
 async function diagnoseEntries(){
   try{
-    if(typeof apiFetch !== 'function' || !AUTH_TOKEN){ alert('You must be signed in to the server.'); return; }
-    const r = await apiFetch('/api/debug/entry-stats', { method:'GET' });
+    // Plain fetch (public endpoint) so auth/token issues can't block the report.
+    const resp = await fetch('/api/debug/entry-stats');
+    if(!resp.ok){
+      const body = await resp.text().catch(()=> '');
+      alert('Diagnostic HTTP '+resp.status+': '+body.slice(0,400));
+      return;
+    }
+    const r = await resp.json();
     let msg = 'SERVER ENTRY DIAGNOSTIC\n';
     msg += '────────────────────────\n';
     msg += 'Total entries: '+r.totalEntries+'\n';
