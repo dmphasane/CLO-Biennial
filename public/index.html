@@ -137,7 +137,7 @@ select[multiple]{height:auto;min-height:80px;}
       </select>
     </div>
     <button class="btn btn-primary" style="width:100%;justify-content:center;padding:12px;" onclick="doLogin()">Sign In</button>
-    <p style="text-align:center;margin-top:14px;font-size:11px;color:var(--muted);">Protected under POPIA. Authorised personnel only. <strong>v3.1-build13</strong></p>
+    <p style="text-align:center;margin-top:14px;font-size:11px;color:var(--muted);">Protected under POPIA. Authorised personnel only. <strong>v3.2-build14</strong></p>
   </div>
 </div>
 
@@ -2810,9 +2810,19 @@ async function diagnoseEntries(){
 async function purgeDuplicatePayments(){
   if(!confirm('Permanently remove DUPLICATE bank entries (same date, amount, reference and description imported more than once)?\n\nOne copy of each payment is kept. All member ledgers are then recalculated from the clean data. This fixes over-counted statements.')) return;
   try{
-    if(typeof apiFetch !== 'function' || !AUTH_TOKEN){ alert('You must be signed in to the server to run this.'); return; }
-    // Dedupe runs against the SERVER's stored entries directly (no local push needed).
-    const r = await apiFetch('/api/entries/dedupe', { method:'POST', body: JSON.stringify({}) });
+    if(!AUTH_TOKEN){ alert('You must be signed in to the server to run this.'); return; }
+    // Plain fetch so we can surface the true server status/body on error.
+    const resp = await fetch('/api/entries/dedupe', {
+      method:'POST',
+      headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer '+AUTH_TOKEN },
+      body: JSON.stringify({})
+    });
+    if(!resp.ok){
+      const body = await resp.text().catch(()=> '');
+      alert('Purge failed — HTTP '+resp.status+': '+body.slice(0,400));
+      return;
+    }
+    const r = await resp.json();
     // Reload clean data from the server and rebuild every ledger
     await loadDB();
     recalcAllLedgersSilent();

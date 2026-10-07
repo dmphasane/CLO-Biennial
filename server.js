@@ -388,9 +388,18 @@ app.post('/api/entries/dedupe', authRequired, async (req, res)=>{
         const del = await client.query(`DELETE FROM entries WHERE id IN (${params})`, chunk);
         removed += del.rowCount || 0;
       }
-      // backfill canonical fingerprints on kept rows so the bulk-insert guard works
-      for(const row of toSetFp){
-        await client.query('UPDATE entries SET fingerprint=$1 WHERE id=$2', [row.fp, row.id]);
+      // Backfill canonical fingerprints on kept rows in BULK (one query per chunk
+      // via unnest) — a per-row loop was timing out against the pooler.
+      for(let i=0;i<toSetFp.length;i+=500){
+        const chunk = toSetFp.slice(i,i+500);
+        const ids = chunk.map(x=>x.id);
+        const fps = chunk.map(x=>x.fp);
+        await client.query(
+          `UPDATE entries AS e SET fingerprint = v.fp
+           FROM (SELECT UNNEST($1::text[]) AS id, UNNEST($2::text[]) AS fp) AS v
+           WHERE e.id = v.id`,
+          [ids, fps]
+        );
       }
       await client.query('COMMIT');
     }catch(err){ await client.query('ROLLBACK'); throw err; }
