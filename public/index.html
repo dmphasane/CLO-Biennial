@@ -137,7 +137,7 @@ select[multiple]{height:auto;min-height:80px;}
       </select>
     </div>
     <button class="btn btn-primary" style="width:100%;justify-content:center;padding:12px;" onclick="doLogin()">Sign In</button>
-    <p style="text-align:center;margin-top:14px;font-size:11px;color:var(--muted);">Protected under POPIA. Authorised personnel only. <strong>v3.2-build14</strong></p>
+    <p style="text-align:center;margin-top:14px;font-size:11px;color:var(--muted);">Protected under POPIA. Authorised personnel only. <strong>v3.3-build15</strong></p>
   </div>
 </div>
 
@@ -2778,6 +2778,19 @@ async function reloadFromServer(){
   }catch(e){ alert('Reload failed: '+(e&&e.message?e.message:e)); }
 }
 
+// Ping the health endpoint until the (possibly sleeping) server responds.
+async function wakeServer(maxWaitMs){
+  const deadline = Date.now() + (maxWaitMs||45000);
+  while(Date.now() < deadline){
+    try{
+      const h = await fetch('/api/health', { cache:'no-store' });
+      if(h.ok) return true;
+    }catch(e){ /* still waking */ }
+    await new Promise(r=>setTimeout(r, 3000));
+  }
+  return false;
+}
+
 // ── Read-only diagnostic: shows what's actually stored on the server ──
 async function diagnoseEntries(){
   try{
@@ -2811,15 +2824,24 @@ async function purgeDuplicatePayments(){
   if(!confirm('Permanently remove DUPLICATE bank entries (same date, amount, reference and description imported more than once)?\n\nOne copy of each payment is kept. All member ledgers are then recalculated from the clean data. This fixes over-counted statements.')) return;
   try{
     if(!AUTH_TOKEN){ alert('You must be signed in to the server to run this.'); return; }
-    // Plain fetch so we can surface the true server status/body on error.
-    const resp = await fetch('/api/entries/dedupe', {
-      method:'POST',
-      headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer '+AUTH_TOKEN },
-      body: JSON.stringify({})
-    });
+    // The free Render instance can be asleep → first hit may 503 while it wakes.
+    // Wake it with a health ping, then retry the purge a few times on 503/502.
+    await wakeServer();
+    let resp, attempt=0;
+    while(attempt<4){
+      attempt++;
+      resp = await fetch('/api/entries/dedupe', {
+        method:'POST',
+        headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer '+AUTH_TOKEN },
+        body: JSON.stringify({})
+      });
+      if(resp.ok) break;
+      if(resp.status===503 || resp.status===502){ await new Promise(r=>setTimeout(r, 4000)); continue; }
+      break; // other error — stop and report
+    }
     if(!resp.ok){
       const body = await resp.text().catch(()=> '');
-      alert('Purge failed — HTTP '+resp.status+': '+body.slice(0,400));
+      alert('Purge failed — HTTP '+resp.status+' after '+attempt+' attempt(s).'+(body?' '+body.slice(0,300):' The server may be waking up or restarting; wait ~30s and try again.'));
       return;
     }
     const r = await resp.json();
