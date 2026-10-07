@@ -2751,14 +2751,14 @@ async function purgeDuplicatePayments(){
   if(!confirm('Permanently remove DUPLICATE bank entries (same date, amount, reference and description imported more than once)?\n\nOne copy of each payment is kept. All member ledgers are then recalculated from the clean data. This fixes over-counted statements.')) return;
   try{
     if(typeof apiFetch !== 'function' || !AUTH_TOKEN){ alert('You must be signed in to the server to run this.'); return; }
-    await flushSync(); // make sure the server has the latest entries first
+    // Dedupe runs against the SERVER's stored entries directly (no local push needed).
     const r = await apiFetch('/api/entries/dedupe', { method:'POST', body: JSON.stringify({}) });
     // Reload clean data from the server and rebuild every ledger
     await loadDB();
     recalcAllLedgersSilent();
     saveDB(); renderAll();
     auditLog('PurgeDuplicates', `Removed ${r.removed} duplicate entries (kept ${r.kept})`);
-    alert(`✅ Removed ${r.removed} duplicate payment entries. ${r.kept} unique entries kept.\n\nAll ledgers have been recalculated. Member statements will now reflect the correct amounts.`);
+    alert('Removed '+r.removed+' duplicate payment entries. '+r.kept+' unique entries kept.\n\nAll ledgers have been recalculated. Member statements will now reflect the correct amounts.');
   }catch(e){
     alert('Purge failed: '+(e&&e.message?e.message:e));
   }

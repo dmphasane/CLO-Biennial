@@ -292,28 +292,37 @@ app.post('/api/register', regLimiter, async (req, res)=>{
 // Keeps the earliest-created row of each group, deletes the rest. Returns a report.
 app.post('/api/entries/dedupe', authRequired, async (req, res)=>{
   try{
-    const r = await query('SELECT * FROM entries ORDER BY created_at ASC NULLS FIRST, id ASC');
+    // Order by id only (created_at may be null on older rows); id is a stable tiebreak.
+    const r = await query('SELECT id, txn_date, credit_amount, reference_raw, description, fingerprint FROM entries ORDER BY id ASC');
     const seen = new Map();
     const toDelete = [];
     const norm = s => (s||'').toUpperCase().replace(/\s+/g,' ').trim();
     for(const e of r.rows){
-      const key = e.fingerprint && String(e.fingerprint).trim()
-        ? 'FP:'+e.fingerprint
-        : ['TX', (e.txn_date||'').trim(), Number(e.credit_amount).toFixed(2), norm(e.reference_raw), norm(e.description)].join('||');
+      const amt = Number(e.credit_amount||0).toFixed(2);
+      const key = (e.fingerprint && String(e.fingerprint).trim())
+        ? 'FP:'+String(e.fingerprint).trim()
+        : ['TX', (e.txn_date||'').trim(), amt, norm(e.reference_raw), norm(e.description)].join('||');
       if(seen.has(key)) toDelete.push(e.id);
       else seen.set(key, e.id);
     }
+    let removed = 0;
     if(toDelete.length){
-      // delete in chunks to stay within parameter limits
-      for(let i=0;i<toDelete.length;i+=500){
-        const chunk = toDelete.slice(i,i+500);
-        const params = chunk.map((_,j)=>'$'+(j+1)).join(',');
-        await query(`DELETE FROM entries WHERE id IN (${params})`, chunk);
-      }
+      const client = await pool.connect();
+      try{
+        await client.query('BEGIN');
+        for(let i=0;i<toDelete.length;i+=200){
+          const chunk = toDelete.slice(i,i+200);
+          const params = chunk.map((_,j)=>'$'+(j+1)).join(',');
+          const del = await client.query(`DELETE FROM entries WHERE id IN (${params})`, chunk);
+          removed += del.rowCount || 0;
+        }
+        await client.query('COMMIT');
+      }catch(err){ await client.query('ROLLBACK'); throw err; }
+      finally{ client.release(); }
     }
-    await logAudit(req.user, 'EntriesDedupe', `Removed ${toDelete.length} duplicate entries (kept ${seen.size})`);
-    res.json({ ok:true, removed: toDelete.length, kept: seen.size });
-  }catch(e){ console.error('dedupe error:', e.message); res.status(500).json({ error:String(e.message||e) }); }
+    await logAudit(req.user, 'EntriesDedupe', `Removed ${removed} duplicate entries (kept ${seen.size})`);
+    res.json({ ok:true, removed, kept: seen.size });
+  }catch(e){ console.error('dedupe error:', e); res.status(500).json({ error:String(e.message||e) }); }
 });
 
 // ─── CUSTOM STATIONS (public: used by registration forms + admin) ───
