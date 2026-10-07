@@ -171,13 +171,21 @@ app.post('/api/entries/bulk', authRequired, async (req, res)=>{
   try{
     await client.query('BEGIN');
     for(const e of entries){
+      // Guard against resurrecting purged duplicates: if an entry with the SAME
+      // fingerprint already exists under a DIFFERENT id, update that existing row
+      // instead of inserting a new (duplicate) one.
+      let targetId = e.id;
+      if(e.fingerprint){
+        const ex = await client.query('SELECT id FROM entries WHERE fingerprint=$1 LIMIT 1', [e.fingerprint]);
+        if(ex.rows.length){ targetId = ex.rows[0].id; }
+      }
       await client.query(
         `INSERT INTO entries (id,txn_date,val_date,description,reference_raw,reference_norm,credit_amount,
            contrib_month,match_status,linked_member_id,allocated_accom,allocated_reg,resolved_by,resolved_at,fingerprint,upload_id)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
          ON CONFLICT (id) DO UPDATE SET match_status=$9,linked_member_id=$10,allocated_accom=$11,
            allocated_reg=$12,resolved_by=$13,resolved_at=$14,contrib_month=$8,fingerprint=$15,upload_id=$16`,
-        [e.id,e.txnDate,e.valDate,e.description,e.referenceRaw,e.referenceNorm,e.creditAmount,
+        [targetId,e.txnDate,e.valDate,e.description,e.referenceRaw,e.referenceNorm,e.creditAmount,
          e.contribMonth,e.matchStatus,e.linkedMemberId,e.allocatedAccom,e.allocatedReg,e.resolvedBy,e.resolvedAt,e.fingerprint||null,e.uploadId||null]
       );
     }
@@ -290,38 +298,52 @@ app.post('/api/register', regLimiter, async (req, res)=>{
 // ─── MAINTENANCE: purge duplicate bank entries (same txn imported twice) ───
 // A "true duplicate" = identical fingerprint OR identical date+amount+ref+desc.
 // Keeps the earliest-created row of each group, deletes the rest. Returns a report.
+// Build a canonical fingerprint string the same way the client does.
+function canonicalFingerprint(txnDate, creditAmount, referenceRaw, description){
+  const norm = s => (s||'').toUpperCase().replace(/\s+/g,' ').trim();
+  // Normalise the date to ISO (YYYY-MM-DD), handling DD/MM/YYYY and YYYY-MM-DD.
+  let iso = (txnDate||'').trim();
+  const d1 = iso.match(/^(\d{4})[\/\-.](\d{1,2})[\/\-.](\d{1,2})$/);
+  const d2 = iso.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})$/);
+  if(d1){ iso = `${d1[1]}-${String(+d1[2]).padStart(2,'0')}-${String(+d1[3]).padStart(2,'0')}`; }
+  else if(d2){ let dd=+d2[1], mm=+d2[2]; if(mm>12&&dd<=12){const t=dd;dd=mm;mm=t;} iso = `${d2[3]}-${String(mm).padStart(2,'0')}-${String(dd).padStart(2,'0')}`; }
+  return [ iso, Number(creditAmount||0).toFixed(2), norm(referenceRaw), norm(description) ].join('||');
+}
+
 app.post('/api/entries/dedupe', authRequired, async (req, res)=>{
   try{
-    // Order by id only (created_at may be null on older rows); id is a stable tiebreak.
     const r = await query('SELECT id, txn_date, credit_amount, reference_raw, description, fingerprint FROM entries ORDER BY id ASC');
-    const seen = new Map();
+    const seen = new Map();     // canonical fingerprint -> kept id
     const toDelete = [];
-    const norm = s => (s||'').toUpperCase().replace(/\s+/g,' ').trim();
+    const toSetFp = [];         // {id, fp} rows that need their fingerprint backfilled
     for(const e of r.rows){
-      const amt = Number(e.credit_amount||0).toFixed(2);
-      const key = (e.fingerprint && String(e.fingerprint).trim())
-        ? 'FP:'+String(e.fingerprint).trim()
-        : ['TX', (e.txn_date||'').trim(), amt, norm(e.reference_raw), norm(e.description)].join('||');
-      if(seen.has(key)) toDelete.push(e.id);
-      else seen.set(key, e.id);
+      const fp = canonicalFingerprint(e.txn_date, e.credit_amount, e.reference_raw, e.description);
+      if(seen.has(fp)) toDelete.push(e.id);
+      else {
+        seen.set(fp, e.id);
+        if(String(e.fingerprint||'') !== fp) toSetFp.push({ id:e.id, fp });
+      }
     }
     let removed = 0;
-    if(toDelete.length){
-      const client = await pool.connect();
-      try{
-        await client.query('BEGIN');
-        for(let i=0;i<toDelete.length;i+=200){
-          const chunk = toDelete.slice(i,i+200);
-          const params = chunk.map((_,j)=>'$'+(j+1)).join(',');
-          const del = await client.query(`DELETE FROM entries WHERE id IN (${params})`, chunk);
-          removed += del.rowCount || 0;
-        }
-        await client.query('COMMIT');
-      }catch(err){ await client.query('ROLLBACK'); throw err; }
-      finally{ client.release(); }
-    }
-    await logAudit(req.user, 'EntriesDedupe', `Removed ${removed} duplicate entries (kept ${seen.size})`);
-    res.json({ ok:true, removed, kept: seen.size });
+    const client = await pool.connect();
+    try{
+      await client.query('BEGIN');
+      // delete duplicates
+      for(let i=0;i<toDelete.length;i+=200){
+        const chunk = toDelete.slice(i,i+200);
+        const params = chunk.map((_,j)=>'$'+(j+1)).join(',');
+        const del = await client.query(`DELETE FROM entries WHERE id IN (${params})`, chunk);
+        removed += del.rowCount || 0;
+      }
+      // backfill canonical fingerprints on kept rows so the bulk-insert guard works
+      for(const row of toSetFp){
+        await client.query('UPDATE entries SET fingerprint=$1 WHERE id=$2', [row.fp, row.id]);
+      }
+      await client.query('COMMIT');
+    }catch(err){ await client.query('ROLLBACK'); throw err; }
+    finally{ client.release(); }
+    await logAudit(req.user, 'EntriesDedupe', `Removed ${removed} duplicates, backfilled ${toSetFp.length} fingerprints (kept ${seen.size})`);
+    res.json({ ok:true, removed, kept: seen.size, fingerprintsBackfilled: toSetFp.length });
   }catch(e){ console.error('dedupe error:', e); res.status(500).json({ error:String(e.message||e) }); }
 });
 
