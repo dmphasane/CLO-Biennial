@@ -342,22 +342,40 @@ function canonicalFingerprint(txnDate, creditAmount, referenceRaw, description){
   const d2 = iso.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})$/);
   if(d1){ iso = `${d1[1]}-${String(+d1[2]).padStart(2,'0')}-${String(+d1[3]).padStart(2,'0')}`; }
   else if(d2){ let dd=+d2[1], mm=+d2[2]; if(mm>12&&dd<=12){const t=dd;dd=mm;mm=t;} iso = `${d2[3]}-${String(mm).padStart(2,'0')}-${String(dd).padStart(2,'0')}`; }
-  return [ iso, Number(creditAmount||0).toFixed(2), norm(referenceRaw), norm(description) ].join('||');
+  // Identity token = reference if present, else description (matches client txnFingerprint),
+  // so a blank-reference payment de-duplicates against its twin that carries a reference.
+  const party = norm(referenceRaw) || norm(description);
+  return [ iso, Number(creditAmount||0).toFixed(2), party ].join('||');
 }
 
 app.post('/api/entries/dedupe', authRequired, async (req, res)=>{
   try{
     const r = await query('SELECT id, txn_date, credit_amount, reference_raw, description, fingerprint FROM entries ORDER BY id ASC');
+    const norm = s => (s||'').toUpperCase().replace(/\s+/g,' ').trim();
+    const isoOf = (txnDate)=>{ let iso=(txnDate||'').trim();
+      const d1=iso.match(/^(\d{4})[\/\-.](\d{1,2})[\/\-.](\d{1,2})$/); const d2=iso.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})$/);
+      if(d1) return `${d1[1]}-${String(+d1[2]).padStart(2,'0')}-${String(+d1[3]).padStart(2,'0')}`;
+      if(d2){ let dd=+d2[1],mm=+d2[2]; if(mm>12&&dd<=12){const t=dd;dd=mm;mm=t;} return `${d2[3]}-${String(mm).padStart(2,'0')}-${String(dd).padStart(2,'0')}`; }
+      return iso; };
+    // Pre-pass: which date+amount combos have at least one row with an identified payer?
+    const dateAmtHasParty = new Set();
+    for(const e of r.rows){
+      const party = norm(e.reference_raw) || norm(e.description);
+      if(party) dateAmtHasParty.add(isoOf(e.txn_date)+'||'+Number(e.credit_amount||0).toFixed(2));
+    }
     const seen = new Map();     // canonical fingerprint -> kept id
     const toDelete = [];
     const toSetFp = [];         // {id, fp} rows that need their fingerprint backfilled
     for(const e of r.rows){
       const fp = canonicalFingerprint(e.txn_date, e.credit_amount, e.reference_raw, e.description);
-      if(seen.has(fp)) toDelete.push(e.id);
-      else {
-        seen.set(fp, e.id);
-        if(String(e.fingerprint||'') !== fp) toSetFp.push({ id:e.id, fp });
-      }
+      const party = norm(e.reference_raw) || norm(e.description);
+      const daKey = isoOf(e.txn_date)+'||'+Number(e.credit_amount||0).toFixed(2);
+      if(seen.has(fp)){ toDelete.push(e.id); continue; }
+      // Blank-party row (no reference AND no description) whose date+amount is also
+      // represented by an identified-payer row → it's the same payment, drop it.
+      if(!party && dateAmtHasParty.has(daKey)){ toDelete.push(e.id); continue; }
+      seen.set(fp, e.id);
+      if(String(e.fingerprint||'') !== fp) toSetFp.push({ id:e.id, fp });
     }
     let removed = 0;
     const client = await pool.connect();

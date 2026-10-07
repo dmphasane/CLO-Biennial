@@ -137,7 +137,7 @@ select[multiple]{height:auto;min-height:80px;}
       </select>
     </div>
     <button class="btn btn-primary" style="width:100%;justify-content:center;padding:12px;" onclick="doLogin()">Sign In</button>
-    <p style="text-align:center;margin-top:14px;font-size:11px;color:var(--muted);">Protected under POPIA. Authorised personnel only. <strong>v3.0-build12</strong></p>
+    <p style="text-align:center;margin-top:14px;font-size:11px;color:var(--muted);">Protected under POPIA. Authorised personnel only. <strong>v3.1-build13</strong></p>
   </div>
 </div>
 
@@ -905,19 +905,33 @@ function isoDate(str){
   return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
 }
 function txnFingerprint(txnDate, ref, desc, amount){
-  return [ isoDate(txnDate), amount.toFixed(2), normalize(ref||''), normalize(desc||'') ].join('||');
+  // Identity token = reference if present, else description. This means a payment
+  // whose reference was blank (payer info only in the description) still produces
+  // the SAME fingerprint as its twin, so it de-duplicates on date + amount + party.
+  const party = normalize(ref||'') || normalize(desc||'');
+  return [ isoDate(txnDate), amount.toFixed(2), party ].join('||');
 }
 // De-duplicate a list of entries by TRANSACTION identity (not just row id), so a
 // member is never credited twice if the same payment exists as multiple rows.
 function dedupeEntries(list){
-  const seen = new Map();
-  (list||[]).forEach(e=>{
-    const key = (e.fingerprint && String(e.fingerprint).trim())
-      ? e.fingerprint
-      : txnFingerprint(e.txnDate, e.referenceRaw, e.description, Number(e.creditAmount));
-    if(!seen.has(key)) seen.set(key, e);
+  const arr = list||[];
+  // Which date+amount combos have at least one row with an identified payer?
+  const dateAmtHasParty = new Set();
+  arr.forEach(e=>{
+    const party = normalize(e.referenceRaw||'') || normalize(e.description||'');
+    if(party) dateAmtHasParty.add(isoDate(e.txnDate)+'||'+Number(e.creditAmount).toFixed(2));
   });
-  return [...seen.values()];
+  const seen = new Map();
+  const out = [];
+  arr.forEach(e=>{
+    const party = normalize(e.referenceRaw||'') || normalize(e.description||'');
+    const daKey = isoDate(e.txnDate)+'||'+Number(e.creditAmount).toFixed(2);
+    const key = txnFingerprint(e.txnDate, e.referenceRaw, e.description, Number(e.creditAmount));
+    if(seen.has(key)) return;                                   // exact duplicate
+    if(!party && dateAmtHasParty.has(daKey)) return;            // blank-party twin of an identified payment
+    seen.set(key, e); out.push(e);
+  });
+  return out;
 }
 // Total matched amount for a member, de-duplicated so duplicate rows never over-count.
 function memberPaid(memberId){
