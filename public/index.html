@@ -137,7 +137,7 @@ select[multiple]{height:auto;min-height:80px;}
       </select>
     </div>
     <button class="btn btn-primary" style="width:100%;justify-content:center;padding:12px;" onclick="doLogin()">Sign In</button>
-    <p style="text-align:center;margin-top:14px;font-size:11px;color:var(--muted);">Protected under POPIA. Authorised personnel only. <strong>v3.3-build15</strong></p>
+    <p style="text-align:center;margin-top:14px;font-size:11px;color:var(--muted);">Protected under POPIA. Authorised personnel only. <strong>v3.4-build16</strong></p>
   </div>
 </div>
 
@@ -2765,16 +2765,11 @@ function recalcAllLedgers(){
 async function reloadFromServer(){
   if(!confirm('Reload all data fresh from the server and discard the local cached copy on this browser?\n\nThis fixes figures that look doubled or out of date. No data is deleted on the server.')) return;
   try{
-    if(typeof apiLoadAll !== 'function' || !AUTH_TOKEN){ alert('You must be signed in to the server.'); return; }
+    if(!AUTH_TOKEN){ alert('You must be signed in to the server.'); return; }
     clearTimeout(_apiSaveTimer);          // cancel any pending debounced push of stale data
     localStorage.removeItem('nedlo_db');  // drop the stale local snapshot
-    DB = await apiLoadAll();               // authoritative server data
-    if(!DB.uploads) DB.uploads = [];
-    if(!DB.refAliases) DB.refAliases = {};
-    localStorage.setItem('nedlo_db', JSON.stringify(DB));
-    renderAll();
-    const total = DB.entries.reduce((s,e)=>s+Number(e.creditAmount||0),0);
-    alert('Reloaded from server.\n\nEntries: '+DB.entries.length+'\nTotal bank credits: '+fmt(total)+'\n\nThe dashboard now reflects the authoritative server figures.');
+    alert('The page will reload with fresh data from the server.');
+    location.reload();                     // full re-init from the server (token persists)
   }catch(e){ alert('Reload failed: '+(e&&e.message?e.message:e)); }
 }
 
@@ -2845,12 +2840,14 @@ async function purgeDuplicatePayments(){
       return;
     }
     const r = await resp.json();
-    // Reload clean data from the server and rebuild every ledger
-    await loadDB();
-    recalcAllLedgersSilent();
-    saveDB(); renderAll();
+    // Rebuild ledgers on the server copy, then force a clean reload of the whole
+    // app so the dashboard reflects the server truth with NO stale cache.
+    localStorage.removeItem('nedlo_db');   // drop any stale local snapshot
+    clearTimeout(_apiSaveTimer);           // cancel pending stale push
     auditLog('PurgeDuplicates', `Removed ${r.removed} duplicate entries (kept ${r.kept})`);
-    alert('Removed '+r.removed+' duplicate payment entries. '+r.kept+' unique entries kept.\n\nAll ledgers have been recalculated. Member statements will now reflect the correct amounts.');
+    alert('Removed '+r.removed+' duplicate payment entries. '+r.kept+' unique entries kept.\n\nThe page will now reload with the corrected figures.');
+    location.reload();  // re-initialises from the server (login token persists)
+    return;
   }catch(e){
     alert('Purge failed: '+(e&&e.message?e.message:e));
   }
@@ -4886,7 +4883,9 @@ function loadLogoForExport(){
 }
 
 window.addEventListener('load',()=>{
-  loadDB();
+  // On first load, don't pre-load the stale cache; data is loaded fresh from the
+  // server inside doLogin() after authentication. (Pre-loading here risked showing
+  // an out-of-date localStorage snapshot on the dashboard.)
   loadLogoForExport();
   // attach dynamic inputs for member modal reference auto-update
   ['m-fullname','m-conf'].forEach(id=>{
