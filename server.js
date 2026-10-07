@@ -295,6 +295,41 @@ app.post('/api/register', regLimiter, async (req, res)=>{
   res.json({ ok:true });
 });
 
+// ─── DIAGNOSTIC: entry statistics (read-only) ───
+// Reports counts, totals, and the biggest clusters so we can see where any
+// inflation comes from. Grouped by amount+reference and by amount+reference+date.
+app.get('/api/debug/entry-stats', authRequired, async (req, res)=>{
+  try{
+    const all = await query('SELECT txn_date, credit_amount, reference_raw, description, match_status, fingerprint FROM entries');
+    const rows = all.rows;
+    const norm = s => (s||'').toUpperCase().replace(/\s+/g,' ').trim();
+    const total = rows.reduce((s,e)=>s+Number(e.credit_amount||0),0);
+    const matched = rows.filter(e=>e.match_status==='MATCHED');
+    const matchedTotal = matched.reduce((s,e)=>s+Number(e.credit_amount||0),0);
+    // Group by amount + reference (ignores date) to spot same-payment clusters
+    const byAmtRef = {};
+    rows.forEach(e=>{
+      const k = Number(e.credit_amount||0).toFixed(2)+' | '+norm(e.reference_raw);
+      if(!byAmtRef[k]) byAmtRef[k]={ count:0, sum:0, dates:[] };
+      byAmtRef[k].count++; byAmtRef[k].sum+=Number(e.credit_amount||0); byAmtRef[k].dates.push((e.txn_date||'').trim());
+    });
+    const clusters = Object.entries(byAmtRef)
+      .filter(([,v])=>v.count>1)
+      .map(([k,v])=>({ key:k, count:v.count, sum:parseFloat(v.sum.toFixed(2)), dates:v.dates }))
+      .sort((a,b)=>b.sum-a.sum).slice(0,40);
+    // How many rows have no fingerprint (can't be guarded)
+    const noFp = rows.filter(e=>!e.fingerprint || !String(e.fingerprint).trim()).length;
+    res.json({
+      totalEntries: rows.length,
+      totalCredits: parseFloat(total.toFixed(2)),
+      matchedEntries: matched.length,
+      matchedCredits: parseFloat(matchedTotal.toFixed(2)),
+      entriesWithoutFingerprint: noFp,
+      topClustersByAmountAndReference: clusters
+    });
+  }catch(e){ res.status(500).json({ error:String(e.message||e) }); }
+});
+
 // ─── MAINTENANCE: purge duplicate bank entries (same txn imported twice) ───
 // A "true duplicate" = identical fingerprint OR identical date+amount+ref+desc.
 // Keeps the earliest-created row of each group, deletes the rest. Returns a report.

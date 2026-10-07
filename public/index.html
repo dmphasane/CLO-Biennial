@@ -137,7 +137,7 @@ select[multiple]{height:auto;min-height:80px;}
       </select>
     </div>
     <button class="btn btn-primary" style="width:100%;justify-content:center;padding:12px;" onclick="doLogin()">Sign In</button>
-    <p style="text-align:center;margin-top:14px;font-size:11px;color:var(--muted);">Protected under POPIA. Authorised personnel only. <strong>v2.8-build10</strong></p>
+    <p style="text-align:center;margin-top:14px;font-size:11px;color:var(--muted);">Protected under POPIA. Authorised personnel only. <strong>v2.9-build11</strong></p>
   </div>
 </div>
 
@@ -260,6 +260,7 @@ select[multiple]{height:auto;min-height:80px;}
           <button class="btn btn-warning btn-sm" onclick="recalcAllLedgers()">📊 Recalc All Ledgers</button>
           <button class="btn btn-warning btn-sm" onclick="findDuplicates()">🔍 Find Duplicates</button>
           <button class="btn btn-danger btn-sm" onclick="purgeDuplicatePayments()" title="Server-side: permanently remove duplicate bank entries (same date, amount, reference & description imported more than once), keeping one of each, then recalculate all ledgers">🧹 Purge Duplicate Payments</button>
+          <button class="btn btn-outline btn-sm" onclick="diagnoseEntries()" title="Show a read-only report of entry counts, totals, and the biggest same-amount+reference clusters">🩺 Diagnose Entries</button>
           <button class="btn btn-danger btn-sm" onclick="fullReset()">⚠️ Full Reset</button>
         </div>
         <div class="filter-bar">
@@ -2742,6 +2743,26 @@ function recalcAllLedgers(){
   saveDB(); renderAll();
   auditLog('RecalcAllLedgers',`Recalculated ledgers for ${count} members with current rates`);
   alert(`Recalculated ${count} member ledgers. All allocations now use current rates.`);
+}
+
+// ── Read-only diagnostic: shows what's actually stored on the server ──
+async function diagnoseEntries(){
+  try{
+    if(typeof apiFetch !== 'function' || !AUTH_TOKEN){ alert('You must be signed in to the server.'); return; }
+    const r = await apiFetch('/api/debug/entry-stats', { method:'GET' });
+    let msg = 'SERVER ENTRY DIAGNOSTIC\n';
+    msg += '────────────────────────\n';
+    msg += 'Total entries: '+r.totalEntries+'\n';
+    msg += 'Total bank credits: '+fmt(r.totalCredits)+'\n';
+    msg += 'Matched entries: '+r.matchedEntries+'  ('+fmt(r.matchedCredits)+')\n';
+    msg += 'Entries without fingerprint: '+r.entriesWithoutFingerprint+'\n\n';
+    msg += 'TOP CLUSTERS (same amount + reference, >1 entry):\n';
+    (r.topClustersByAmountAndReference||[]).slice(0,20).forEach(c=>{
+      msg += `• ${c.count}× R${c.key}  (sum ${fmt(c.sum)})  dates: ${c.dates.join(', ')}\n`;
+    });
+    console.log('ENTRY STATS', r);
+    alert(msg);
+  }catch(e){ alert('Diagnostic failed: '+(e&&e.message?e.message:e)); }
 }
 
 // ── Server-side purge of duplicate payments, then full reload + recalc ──
