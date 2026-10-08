@@ -55,9 +55,17 @@ app.use(cors({ origin: process.env.FRONTEND_URL || '*', credentials: true }));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.static(path.join(__dirname, 'public'))); // serves the frontend
 
-// Explicit root route → serve index.html
+// Explicit root route → serve index.html (admin portal)
 app.get('/', (req, res)=>{
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+// Clean, shareable registration links (no .html) → serve the registration form
+app.get(['/register', '/join', '/signup'], (req, res)=>{
+  res.sendFile(path.join(__dirname, 'public', 'register.html'));
+});
+app.get('/register-remote', (req, res)=>{
+  res.sendFile(path.join(__dirname, 'public', 'register-remote.html'));
 });
 
 // Rate limit auth endpoint
