@@ -15,6 +15,13 @@ dotenv.config();
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
+// ─── Global crash guards ───
+// Keep the process alive if an async error slips through anywhere. Without these,
+// a single unhandled rejection (e.g. a transient DB/email error) would crash the
+// whole server and every user would get 503 until Render restarts it.
+process.on('unhandledRejection', (reason)=>{ console.error('UNHANDLED REJECTION:', reason); });
+process.on('uncaughtException', (err)=>{ console.error('UNCAUGHT EXCEPTION:', err); });
+
 // ─── Auto-initialise database on startup (schema + seed users) ───
 async function autoInitDb(){
   try{
@@ -260,47 +267,55 @@ app.get('/api/audit', authRequired, async (req, res)=>{
 // ─── PUBLIC REGISTRATION (no auth — for member self-registration) ───
 const regLimiter = rateLimit({ windowMs: 60*60*1000, max: 50 });
 app.post('/api/register', regLimiter, async (req, res)=>{
-  const m = req.body;
-  if(!m.fullName || !m.conferenceCode || !m.accommodationOption || !m.paymentRef){
-    return res.status(400).json({ error:'Missing required fields' });
-  }
-  // Prevent duplicate refs
-  const dup = await query('SELECT id FROM members WHERE payment_ref=$1', [m.paymentRef]);
-  if(dup.rows.length) return res.status(409).json({ error:'A registration with this reference already exists.' });
-  await query(
-    `INSERT INTO members (id,full_name,conference_code,local_church,email,phone,accommodation_option,
-       expected_monthly_total,expected_accom,expected_reg,payment_ref,registration_date,ledger,cohort,district)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
-    [m.id, m.fullName, m.conferenceCode, m.localChurch, m.email, m.phone, m.accommodationOption,
-     m.expectedMonthlyTotal, m.expectedAccom, m.expectedReg, m.paymentRef, m.registrationDate, JSON.stringify(m.ledger||{}), m.cohort||'new', m.district||null]
-  );
-  // If the member added a new station, persist it so others can select it next time
-  if(m.district && m.localChurch){
-    try{
-      await query(
-        `INSERT INTO custom_stations (conference_code, district, station) VALUES ($1,$2,$3)
-         ON CONFLICT (conference_code, district, station) DO NOTHING`,
-        [String(m.conferenceCode).toUpperCase(), String(m.district).trim(), String(m.localChurch).trim()]
-      );
-    }catch(e){ console.error('station upsert on register failed:', e.message); }
-  }
-  await logAudit({ name:'Self-Registration', role:'Member' }, 'Register', m.paymentRef);
-  // Send confirmation email to the registrant (non-blocking — never fail the
-  // registration if email cannot be sent, e.g. no provider configured).
-  if(m.email){
-    (async ()=>{
-      const html = buildRegistrationConfirmationHTML(m);
-      const r = await sendEmail({
-        to: m.email,
-        cc: process.env.GMAIL_USER || 'nedloregistration@gmail.com', // notify the office
-        subject: `NEDLO Biennial 2027 – Registration Confirmation (${m.paymentRef})`,
-        html,
+  try{
+    const m = req.body || {};
+    if(!m.fullName || !m.conferenceCode || !m.accommodationOption || !m.paymentRef){
+      return res.status(400).json({ error:'Missing required fields' });
+    }
+    // Prevent duplicate refs
+    const dup = await query('SELECT id FROM members WHERE payment_ref=$1', [m.paymentRef]);
+    if(dup.rows.length) return res.status(409).json({ error:'A registration with this reference already exists.' });
+    await query(
+      `INSERT INTO members (id,full_name,conference_code,local_church,email,phone,accommodation_option,
+         expected_monthly_total,expected_accom,expected_reg,payment_ref,registration_date,ledger,cohort,district)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
+      [m.id, m.fullName, m.conferenceCode, m.localChurch, m.email, m.phone, m.accommodationOption,
+       m.expectedMonthlyTotal, m.expectedAccom, m.expectedReg, m.paymentRef, m.registrationDate, JSON.stringify(m.ledger||{}), m.cohort||'new', m.district||null]
+    );
+    // If the member added a new station, persist it so others can select it next time
+    if(m.district && m.localChurch){
+      try{
+        await query(
+          `INSERT INTO custom_stations (conference_code, district, station) VALUES ($1,$2,$3)
+           ON CONFLICT (conference_code, district, station) DO NOTHING`,
+          [String(m.conferenceCode).toUpperCase(), String(m.district).trim(), String(m.localChurch).trim()]
+        );
+      }catch(e){ console.error('station upsert on register failed:', e.message); }
+    }
+    try{ await logAudit({ name:'Self-Registration', role:'Member' }, 'Register', m.paymentRef); }catch(e){}
+    // Respond to the registrant IMMEDIATELY — do not make them wait for the email.
+    res.json({ ok:true });
+    // Send confirmation email AFTER responding (fully detached, fully guarded so a
+    // failure here can never crash the process or 503 the request).
+    if(m.email){
+      setImmediate(async ()=>{
+        try{
+          const html = buildRegistrationConfirmationHTML(m);
+          const r = await sendEmail({
+            to: m.email,
+            cc: process.env.GMAIL_USER || 'nedloregistration@gmail.com',
+            subject: `NEDLO Biennial 2027 – Registration Confirmation (${m.paymentRef})`,
+            html,
+          });
+          if(r.ok){ try{ await logAudit({ name:'System', role:'' }, 'RegistrationEmail', `Confirmation sent to ${m.fullName} (${m.email}) via ${r.provider}`); }catch(e){} }
+          else { console.error('Registration confirmation email failed:', r.error); }
+        }catch(err){ console.error('Registration email crashed (ignored):', err && err.message); }
       });
-      if(r.ok){ await logAudit({ name:'System', role:'' }, 'RegistrationEmail', `Confirmation sent to ${m.fullName} (${m.email}) via ${r.provider}`); }
-      else { console.error('Registration confirmation email failed:', r.error); }
-    })();
+    }
+  }catch(e){
+    console.error('REGISTER ERROR:', e);
+    if(!res.headersSent) res.status(500).json({ error:'Registration failed: '+(e.message||e) });
   }
-  res.json({ ok:true });
 });
 
 // ─── DIAGNOSTIC: entry statistics (read-only) ───
