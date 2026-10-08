@@ -137,7 +137,7 @@ select[multiple]{height:auto;min-height:80px;}
       </select>
     </div>
     <button class="btn btn-primary" style="width:100%;justify-content:center;padding:12px;" onclick="doLogin()">Sign In</button>
-    <p style="text-align:center;margin-top:14px;font-size:11px;color:var(--muted);">Protected under POPIA. Authorised personnel only. <strong>v3.5-build17</strong></p>
+    <p style="text-align:center;margin-top:14px;font-size:11px;color:var(--muted);">Protected under POPIA. Authorised personnel only. <strong>v3.6-build18</strong></p>
   </div>
 </div>
 
@@ -4273,11 +4273,71 @@ function renderCommsTable(){
       <td>
         <button class="btn btn-sm btn-primary" onclick="previewLetter('${m.id}')">👁 Preview</button>
         ${m.email?`<button class="btn btn-sm btn-outline" onclick="quickSendEmail('${m.id}', this)">📤 Send</button>`:''}
+        ${m.phone?`<button class="btn btn-sm btn-success" onclick="whatsappMember('${m.id}')" title="Open WhatsApp with a pre-filled statement summary for this member">🟢 WhatsApp</button>`:''}
       </td>
     </tr>`;
   });
   html+='</tbody></table>';
   el.innerHTML=html;
+}
+
+// Normalise a South African phone number to WhatsApp international format (27XXXXXXXXX).
+function waNormalizePhone(raw){
+  let p = String(raw||'').replace(/[^0-9+]/g,'');
+  if(!p) return '';
+  p = p.replace(/^\+/,'');
+  if(p.startsWith('27')) return p;          // already international
+  if(p.startsWith('0')) return '27'+p.slice(1); // local 0XX... -> 27XX...
+  if(p.length===9) return '27'+p;           // 9-digit without leading 0
+  return p;                                  // leave as-is (best effort)
+}
+// Build a concise plain-text statement summary suitable for a WhatsApp message.
+function buildWhatsappText(m){
+  const isFlex = OPTIONS[m.accommodationOption]?.flexAmount;
+  const nMo = memberMonths(m);
+  const totalExp = isFlex ? 0 : memberExpectedTotal(m);
+  const paid = memberPaid(m.id);
+  const outstanding = isFlex ? 0 : Math.max(0, totalExp - paid);
+  const opt = OPTIONS[m.accommodationOption]||{};
+  const first = (m.fullName||'').trim().split(' ')[0] || 'Member';
+  const lines = [];
+  lines.push('NEDLO Biennial 2027 Stokvel Fund');
+  lines.push('Contribution Statement');
+  lines.push('');
+  lines.push('Dear '+first+',');
+  lines.push('');
+  lines.push('Here is the status of your contributions:');
+  lines.push('• Option: '+m.accommodationOption+(opt.hotel&&opt.hotel!=='N/A'?' – '+opt.hotel+' ('+opt.type+')':''));
+  if(!isFlex){
+    lines.push('• Monthly instalment: '+fmt(m.expectedMonthlyTotal));
+    lines.push('• Total commitment ('+nMo+' months): '+fmt(totalExp));
+  }
+  lines.push('• Total received to date: '+fmt(paid));
+  if(!isFlex) lines.push('• Balance outstanding: '+(outstanding<=0.05?'NIL – FULLY PAID':fmt(outstanding)));
+  lines.push('');
+  lines.push('BANKING DETAILS');
+  lines.push('Account Name: Biennial 2027 - Lay Organization Stokvel Fund');
+  lines.push('Account No: 63211345582');
+  lines.push('Bank: FNB  |  Branch: 250655');
+  lines.push('Your Reference: '+m.paymentRef);
+  lines.push('');
+  lines.push('Please use your reference for every payment. Reply here if you have any queries.');
+  lines.push('');
+  lines.push('NEDLO Financial Secretary\'s Office');
+  return lines.join('\n');
+}
+// Open WhatsApp (web/app) with the pre-filled statement for this member.
+function whatsappMember(memberId){
+  const m = DB.members.find(x=>x.id===memberId); if(!m) return;
+  const phone = waNormalizePhone(m.phone);
+  if(!phone){ alert('No usable phone number on file for '+m.fullName+'.'); return; }
+  const text = encodeURIComponent(buildWhatsappText(m));
+  // wa.me opens WhatsApp with the chat + message pre-filled; you tap send.
+  window.open('https://wa.me/'+phone+'?text='+text, '_blank');
+  // Record that a statement was shared (counts as sent for tracking)
+  m.lastStatementSentAt = new Date().toISOString();
+  saveDB();
+  renderCommsTable();
 }
 
 function generateLetterHTML(memberId, forEmail=false){
