@@ -137,7 +137,7 @@ select[multiple]{height:auto;min-height:80px;}
       </select>
     </div>
     <button class="btn btn-primary" style="width:100%;justify-content:center;padding:12px;" onclick="doLogin()">Sign In</button>
-    <p style="text-align:center;margin-top:14px;font-size:11px;color:var(--muted);">Protected under POPIA. Authorised personnel only. <strong>v3.7-build19</strong></p>
+    <p style="text-align:center;margin-top:14px;font-size:11px;color:var(--muted);">Protected under POPIA. Authorised personnel only. <strong>v3.8-build20</strong></p>
   </div>
 </div>
 
@@ -292,7 +292,10 @@ select[multiple]{height:auto;min-height:80px;}
 
     <!-- ── REPORTS ── -->
     <div id="page-reports" class="page">
-      <div class="card-title" style="font-size:20px;margin-bottom:16px;">📋 Reconciliation Reports</div>
+      <div class="flex justify-between items-center mb-4">
+        <div class="card-title" style="font-size:20px;margin-bottom:0;">📋 Reconciliation Reports</div>
+        <button class="btn btn-warning btn-sm" onclick="rebuildAndSaveLedgers()" title="Recompute every member's month-by-month allocation from the current (de-duplicated) payments and save. Run this if a report shows payments in months the member hasn't paid for.">🔧 Rebuild &amp; Save Ledgers</button>
+      </div>
       <div class="row">
         <!-- Monthly -->
         <div class="card col-third" style="min-width:280px;">
@@ -2729,8 +2732,8 @@ function recalcAllLedgers(){
     const sched = memberSchedule(m);
     m.ledger={};
     sched.forEach(mk=>{ m.ledger[mk]={status:'NOT_PAID',entryId:null,received:0,accom:0,reg:0}; });
-    // Get all matched entries for this member, sorted by date
-    const memberEntries = DB.entries.filter(e=>e.linkedMemberId===m.id && e.matchStatus==='MATCHED')
+    // Get all matched entries for this member, de-duplicated, sorted by date
+    const memberEntries = dedupeEntries(DB.entries.filter(e=>e.linkedMemberId===m.id && e.matchStatus==='MATCHED'))
       .sort((a,b)=>a.txnDate.localeCompare(b.txnDate));
     // Running balance approach: accumulate all payments, then fill months
     let runningCredit = 0;
@@ -2870,6 +2873,19 @@ async function purgeDuplicatePayments(){
 // Recalculate every member's ledger from scratch WITHOUT prompting (used after a purge)
 function recalcAllLedgersSilent(){
   DB.members.forEach(m=>{ recalcLedgerForMember(m.id); });
+}
+// Rebuild all ledgers from the current (de-duplicated) payments, then force-save
+// to the server so reports reflect the corrected month-by-month allocation.
+async function rebuildAndSaveLedgers(){
+  if(!confirm('Rebuild every member\'s month-by-month allocation from their actual (de-duplicated) payments and save?\n\nThis corrects statements/reports that show payments in months a member has not actually paid for.')) return;
+  try{
+    recalcAllLedgersSilent();
+    saveDB();
+    if(typeof flushSync === 'function'){ await flushSync(); }  // push rebuilt ledgers to the server now
+    renderAll();
+    auditLog('RebuildLedgers', 'Rebuilt and saved all member ledgers from de-duplicated payments');
+    alert('All member ledgers rebuilt from actual payments and saved.\n\nRe-generate the report to see the corrected allocation (each member now shows only the months their payments actually cover).');
+  }catch(e){ alert('Rebuild failed: '+(e&&e.message?e.message:e)); }
 }
 
 // ── Find TRUE duplicate bank entries (same transaction imported twice) ──
