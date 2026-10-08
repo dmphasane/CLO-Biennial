@@ -137,7 +137,7 @@ select[multiple]{height:auto;min-height:80px;}
       </select>
     </div>
     <button class="btn btn-primary" style="width:100%;justify-content:center;padding:12px;" onclick="doLogin()">Sign In</button>
-    <p style="text-align:center;margin-top:14px;font-size:11px;color:var(--muted);">Protected under POPIA. Authorised personnel only. <strong>v3.8-build20</strong></p>
+    <p style="text-align:center;margin-top:14px;font-size:11px;color:var(--muted);">Protected under POPIA. Authorised personnel only. <strong>v3.9-build21</strong></p>
   </div>
 </div>
 
@@ -2781,14 +2781,28 @@ function recalcAllLedgers(){
 // ── Discard local cache and reload the authoritative data from the server ──
 // Fixes stale/doubled dashboard figures caused by an old localStorage snapshot.
 async function reloadFromServer(){
-  if(!confirm('Reload all data fresh from the server and discard the local cached copy on this browser?\n\nThis fixes figures that look doubled or out of date. No data is deleted on the server.')) return;
+  if(!confirm('Reload all data fresh from the server?\n\nThis fixes figures that look doubled or out of date. No data is deleted on the server.')) return;
   try{
     if(!AUTH_TOKEN){ alert('You must be signed in to the server.'); return; }
+    // IMPORTANT: make sure the server is actually awake BEFORE clearing the local
+    // cache / reloading, so we never land on a blank 503 page with no fallback.
+    const up = await wakeServer(60000);
+    if(!up){
+      alert('The server is still waking up (it sleeps after inactivity on the free plan). Your data is safe on the server — please wait ~30 seconds and try again. The local copy has NOT been cleared.');
+      return;
+    }
     clearTimeout(_apiSaveTimer);          // cancel any pending debounced push of stale data
-    localStorage.removeItem('nedlo_db');  // drop the stale local snapshot
-    alert('The page will reload with fresh data from the server.');
-    location.reload();                     // full re-init from the server (token persists)
-  }catch(e){ alert('Reload failed: '+(e&&e.message?e.message:e)); }
+    // Fetch fresh data in-place first; only then update the cache. No page reload,
+    // so there is no risk of a blank screen.
+    const fresh = await apiLoadAll();
+    DB = fresh;
+    if(!DB.uploads) DB.uploads = [];
+    if(!DB.refAliases) DB.refAliases = {};
+    localStorage.setItem('nedlo_db', JSON.stringify(DB));
+    renderAll();
+    const total = DB.entries.reduce((s,e)=>s+Number(e.creditAmount||0),0);
+    alert('Reloaded from server.\n\nMembers: '+DB.members.length+'\nEntries: '+DB.entries.length+'\nTotal bank credits: '+fmt(total)+'\n\nThe dashboard now reflects the authoritative server figures.');
+  }catch(e){ alert('Reload failed: '+(e&&e.message?e.message:e)+'\n\nYour data is safe on the server; nothing was cleared.'); }
 }
 
 // Ping the health endpoint until the (possibly sleeping) server responds.
@@ -2860,11 +2874,16 @@ async function purgeDuplicatePayments(){
     const r = await resp.json();
     // Rebuild ledgers on the server copy, then force a clean reload of the whole
     // app so the dashboard reflects the server truth with NO stale cache.
-    localStorage.removeItem('nedlo_db');   // drop any stale local snapshot
     clearTimeout(_apiSaveTimer);           // cancel pending stale push
+    // Reload fresh data IN-PLACE (no page reload) so we never hit a blank 503 page.
+    const fresh = await apiLoadAll();
+    DB = fresh;
+    if(!DB.uploads) DB.uploads = [];
+    if(!DB.refAliases) DB.refAliases = {};
+    localStorage.setItem('nedlo_db', JSON.stringify(DB));
+    renderAll();
     auditLog('PurgeDuplicates', `Removed ${r.removed} duplicate entries (kept ${r.kept})`);
-    alert('Removed '+r.removed+' duplicate payment entries. '+r.kept+' unique entries kept.\n\nThe page will now reload with the corrected figures.');
-    location.reload();  // re-initialises from the server (login token persists)
+    alert('Removed '+r.removed+' duplicate payment entries. '+r.kept+' unique entries kept. The figures have been refreshed.');
     return;
   }catch(e){
     alert('Purge failed: '+(e&&e.message?e.message:e));
