@@ -44,15 +44,26 @@ async function apiLogin(username, password){
 }
 
 // ─── Load all data from the API into the DB object ───
+// Resilient: members + entries are REQUIRED (retried); aliases/audit/uploads are
+// optional and default to empty if their endpoint is slow or errors, so one
+// failing sub-request never aborts the whole reload.
 async function apiLoadAll(){
-  const [members, entries, aliases, audit, uploads] = await Promise.all([
-    apiFetch('/api/members'),
-    apiFetch('/api/entries'),
-    apiFetch('/api/aliases'),
-    apiFetch('/api/audit'),
-    apiFetch('/api/uploads').catch(()=>[]),
-  ]);
-  return { members, entries, refAliases: aliases||{}, auditLog: audit||[], uploads: uploads||[] };
+  async function getWithRetry(path, tries){
+    let lastErr;
+    for(let i=0;i<(tries||3);i++){
+      try{ return await apiFetch(path); }
+      catch(e){ lastErr=e; await new Promise(r=>setTimeout(r, 1500)); }
+    }
+    throw lastErr;
+  }
+  // Required data — retry a few times (pooler can be briefly slow)
+  const members = await getWithRetry('/api/members', 3);
+  const entries = await getWithRetry('/api/entries', 3);
+  // Optional data — never fail the whole load if these error
+  const aliases = await apiFetch('/api/aliases').catch(()=>({}));
+  const audit   = await apiFetch('/api/audit').catch(()=>[]);
+  const uploads = await apiFetch('/api/uploads').catch(()=>[]);
+  return { members: members||[], entries: entries||[], refAliases: aliases||{}, auditLog: audit||[], uploads: uploads||[] };
 }
 
 // ─── Persist helpers ───
