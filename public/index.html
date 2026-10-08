@@ -137,7 +137,7 @@ select[multiple]{height:auto;min-height:80px;}
       </select>
     </div>
     <button class="btn btn-primary" style="width:100%;justify-content:center;padding:12px;" onclick="doLogin()">Sign In</button>
-    <p style="text-align:center;margin-top:14px;font-size:11px;color:var(--muted);">Protected under POPIA. Authorised personnel only. <strong>v3.6-build18</strong></p>
+    <p style="text-align:center;margin-top:14px;font-size:11px;color:var(--muted);">Protected under POPIA. Authorised personnel only. <strong>v3.7-build19</strong></p>
   </div>
 </div>
 
@@ -4247,11 +4247,25 @@ function renderCommsTable(){
   const el = document.getElementById('comms-table-wrap');
   if(!members.length){ el.innerHTML='<p class="text-muted" style="padding:16px;">No members found.</p>'; return; }
 
-  let html=`<table><thead><tr>
+  // Sent-status summary counts for the header banner
+  let cntSent=0, cntNot=0;
+  members.forEach(m=>{ if(m.lastStatementSentAt) cntSent++; else cntNot++; });
+
+  let html = `<div class="alert alert-info" style="font-size:12px;margin-bottom:10px;">
+    📊 Sent status (current filter): <strong style="color:var(--success);">${cntSent} sent</strong> &nbsp;|&nbsp;
+    <strong style="color:var(--danger);">${cntNot} not sent</strong> &nbsp; of ${members.length} shown.
+  </div>`;
+  html+=`<table><thead><tr>
     <th><input type="checkbox" id="comms-select-all" onchange="document.querySelectorAll('.comms-cb').forEach(c=>c.checked=this.checked)" style="width:auto;"/></th>
-    <th>Member</th><th>Conference</th><th>Email</th><th>Option</th>
+    <th>Member</th><th>Conference</th><th>Contact</th><th>Option</th>
     <th class="text-right">Total Paid</th><th class="text-right">Outstanding</th><th>Status</th><th>Statement Sent</th><th>Actions</th>
   </tr></thead><tbody>`;
+
+  const channelBadge = (ch)=>{
+    if(ch==='email') return '📧 Email';
+    if(ch==='whatsapp') return '🟢 WhatsApp';
+    return 'Sent';
+  };
 
   members.forEach(m=>{
     // Use actual matched bank entries for true total paid (de-duplicated)
@@ -4260,25 +4274,47 @@ function renderCommsTable(){
     const totalExp12 = isFlexAmount ? 0 : memberExpectedTotal(m);
     const outstanding = isFlexAmount ? 0 : Math.max(0, totalExp12 - actualPaid);
     const allPaid = isFlexAmount ? actualPaid>0 : outstanding<=0.05;
+    const sentCell = m.lastStatementSentAt
+      ? `<span class="badge badge-paid">${channelBadge(m.lastStatementChannel)}</span><br/>
+         <span style="color:var(--muted);font-size:11px;">${fmtSentStamp(m.lastStatementSentAt)}</span><br/>
+         <button class="btn btn-sm btn-outline" style="margin-top:3px;font-size:10px;padding:2px 6px;" onclick="clearSentStatus('${m.id}')" title="Mark as NOT sent">↺ Clear</button>`
+      : `<span class="text-muted">Not sent</span><br/>
+         <button class="btn btn-sm btn-outline" style="margin-top:3px;font-size:10px;padding:2px 6px;" onclick="markSentManual('${m.id}')" title="Mark as sent (e.g. after you sent it on WhatsApp)">✓ Mark sent</button>`;
+    const contact = (m.email?('📧 '+m.email):'') + (m.email&&m.phone?'<br/>':'') + (m.phone?('📱 '+m.phone):'') || '<span style="color:var(--danger);">No contact</span>';
     html+=`<tr>
       <td><input type="checkbox" class="comms-cb" value="${m.id}" style="width:auto;"/></td>
       <td class="font-bold">${m.fullName}</td>
       <td><span class="badge" style="background:#dbeafe;color:#1e40af;">${m.conferenceCode}</span></td>
-      <td style="font-size:12px;">${m.email||'<span style="color:var(--danger);">No email</span>'}</td>
+      <td style="font-size:11.5px;">${contact}</td>
       <td>${m.accommodationOption}</td>
       <td class="text-right" style="color:var(--success);">${fmt(actualPaid)}</td>
       <td class="text-right" style="color:${outstanding>0?'var(--danger)':'var(--success)'}">${isFlexAmount?'—':fmt(outstanding)}</td>
       <td>${allPaid?'<span class="badge badge-paid">Current</span>':'<span class="badge badge-notpaid">Outstanding</span>'}</td>
-      <td style="font-size:11.5px;">${m.lastStatementSentAt?('<span class="badge badge-paid">Sent</span><br/><span style="color:var(--muted);">'+fmtSentStamp(m.lastStatementSentAt)+'</span>'):'<span class="text-muted">Not sent</span>'}</td>
+      <td style="font-size:11.5px;">${sentCell}</td>
       <td>
         <button class="btn btn-sm btn-primary" onclick="previewLetter('${m.id}')">👁 Preview</button>
-        ${m.email?`<button class="btn btn-sm btn-outline" onclick="quickSendEmail('${m.id}', this)">📤 Send</button>`:''}
+        ${m.email?`<button class="btn btn-sm btn-outline" onclick="quickSendEmail('${m.id}', this)">📤 Email</button>`:''}
         ${m.phone?`<button class="btn btn-sm btn-success" onclick="whatsappMember('${m.id}')" title="Open WhatsApp with a pre-filled statement summary for this member">🟢 WhatsApp</button>`:''}
       </td>
     </tr>`;
   });
   html+='</tbody></table>';
   el.innerHTML=html;
+}
+
+// Manually mark a statement as sent (e.g. after sending via WhatsApp)
+function markSentManual(memberId){
+  const m = DB.members.find(x=>x.id===memberId); if(!m) return;
+  m.lastStatementSentAt = new Date().toISOString();
+  m.lastStatementChannel = m.lastStatementChannel || 'manual';
+  saveDB(); renderCommsTable();
+}
+// Clear the sent status (mark as not sent)
+function clearSentStatus(memberId){
+  const m = DB.members.find(x=>x.id===memberId); if(!m) return;
+  m.lastStatementSentAt = null;
+  m.lastStatementChannel = null;
+  saveDB(); renderCommsTable();
 }
 
 // Normalise a South African phone number to WhatsApp international format (27XXXXXXXXX).
@@ -4334,8 +4370,10 @@ function whatsappMember(memberId){
   const text = encodeURIComponent(buildWhatsappText(m));
   // wa.me opens WhatsApp with the chat + message pre-filled; you tap send.
   window.open('https://wa.me/'+phone+'?text='+text, '_blank');
-  // Record that a statement was shared (counts as sent for tracking)
+  // Mark as shared via WhatsApp (you still tap Send in WhatsApp; use the
+  // "Mark sent" / "Clear" controls if you need to correct the status).
   m.lastStatementSentAt = new Date().toISOString();
+  m.lastStatementChannel = 'whatsapp';
   saveDB();
   renderCommsTable();
 }
@@ -4630,6 +4668,7 @@ async function quickSendEmail(memberId, btn){
     const r = await apiFetch('/api/send-statement', { method:'POST', body: JSON.stringify({ memberId, settings }) });
     // Record the sent timestamp against the member for the Communications status view
     m.lastStatementSentAt = new Date().toISOString();
+    m.lastStatementChannel = 'email';
     saveDB();
     renderCommsTable();
     alert('Statement emailed to '+m.fullName+' ('+m.email+')');
@@ -4773,7 +4812,7 @@ async function bulkSendEmails(){
     // Stamp the sent timestamp on each member the server confirmed as sent
     const stamp = new Date().toISOString();
     const sentIds = Array.isArray(r.sentIds) ? r.sentIds : withEmail; // fallback if older server
-    sentIds.forEach(id=>{ const mm=DB.members.find(x=>x.id===id); if(mm) mm.lastStatementSentAt = stamp; });
+    sentIds.forEach(id=>{ const mm=DB.members.find(x=>x.id===id); if(mm){ mm.lastStatementSentAt = stamp; mm.lastStatementChannel = 'email'; } });
     saveDB();
     renderCommsTable();
     alert(`Bulk send complete: ${r.sent} sent, ${r.skipped} skipped, ${r.failed} failed.`);

@@ -38,6 +38,7 @@ CREATE INDEX IF NOT EXISTS idx_members_conf ON members(conference_code);
 ALTER TABLE members ADD COLUMN IF NOT EXISTS cohort TEXT DEFAULT 'legacy';
 ALTER TABLE members ADD COLUMN IF NOT EXISTS last_statement_sent_at TIMESTAMPTZ;
 ALTER TABLE members ADD COLUMN IF NOT EXISTS district TEXT;
+ALTER TABLE members ADD COLUMN IF NOT EXISTS last_statement_channel TEXT;
 
 CREATE TABLE IF NOT EXISTS entries (
   id TEXT PRIMARY KEY,

@@ -151,13 +151,13 @@ app.post('/api/members', authRequired, async (req, res)=>{
   const m = req.body;
   await query(
     `INSERT INTO members (id,full_name,conference_code,local_church,email,phone,accommodation_option,
-       expected_monthly_total,expected_accom,expected_reg,payment_ref,registration_date,ledger,cohort,last_statement_sent_at,district)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+       expected_monthly_total,expected_accom,expected_reg,payment_ref,registration_date,ledger,cohort,last_statement_sent_at,district,last_statement_channel)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
      ON CONFLICT (id) DO UPDATE SET full_name=$2,conference_code=$3,local_church=$4,email=$5,phone=$6,
        accommodation_option=$7,expected_monthly_total=$8,expected_accom=$9,expected_reg=$10,payment_ref=$11,
-       ledger=$13,cohort=$14,last_statement_sent_at=$15,district=$16,updated_at=now()`,
+       ledger=$13,cohort=$14,last_statement_sent_at=$15,district=$16,last_statement_channel=$17,updated_at=now()`,
     [m.id, m.fullName, m.conferenceCode, m.localChurch, m.email, m.phone, m.accommodationOption,
-     m.expectedMonthlyTotal, m.expectedAccom, m.expectedReg, m.paymentRef, m.registrationDate, JSON.stringify(m.ledger||{}), m.cohort||'legacy', m.lastStatementSentAt||null, m.district||null]
+     m.expectedMonthlyTotal, m.expectedAccom, m.expectedReg, m.paymentRef, m.registrationDate, JSON.stringify(m.ledger||{}), m.cohort||'legacy', m.lastStatementSentAt||null, m.district||null, m.lastStatementChannel||null]
   );
   await logAudit(req.user, 'MemberSave', m.paymentRef);
   res.json({ ok:true });
@@ -461,7 +461,7 @@ function rowToMember(r){
     email:r.email, phone:r.phone, accommodationOption:r.accommodation_option,
     expectedMonthlyTotal:Number(r.expected_monthly_total), expectedAccom:Number(r.expected_accom),
     expectedReg:Number(r.expected_reg), paymentRef:r.payment_ref, registrationDate:r.registration_date,
-    cohort:r.cohort||'legacy', lastStatementSentAt:r.last_statement_sent_at||null, district:r.district||'',
+    cohort:r.cohort||'legacy', lastStatementSentAt:r.last_statement_sent_at||null, lastStatementChannel:r.last_statement_channel||null, district:r.district||'',
     roomNumber:r.room_number, hotelRoom:r.hotel_room, roomPartner:r.room_partner, ledger:r.ledger||{} };
 }
 function rowToEntry(r){
@@ -495,7 +495,7 @@ app.post('/api/send-statement', authRequired, async (req, res)=>{
       html,
     });
     if(!r.ok) return res.status(500).json({ error:`Email failed (${r.provider}): ${r.error}` });
-    await query('UPDATE members SET last_statement_sent_at=now() WHERE id=$1', [memberId]);
+    await query("UPDATE members SET last_statement_sent_at=now(), last_statement_channel='email' WHERE id=$1", [memberId]);
     await logAudit(req.user, 'EmailSent', `Statement emailed to ${m.fullName} (${m.email}) via ${r.provider}`);
     res.json({ ok:true });
   }catch(e){ console.error('send-statement error:', e.message); res.status(500).json({ error:e.message }); }
@@ -520,7 +520,7 @@ app.post('/api/send-bulk', authRequired, async (req, res)=>{
         subject: `NEDLO Biennial 2027 Stokvel Fund – Contribution Statement for ${m.fullName}`,
         html,
       });
-      if(r.ok){ sent++; sentIds.push(id); await query('UPDATE members SET last_statement_sent_at=now() WHERE id=$1', [id]); } else { failed.push(id); console.error('bulk send fail', id, r.error); }
+      if(r.ok){ sent++; sentIds.push(id); await query("UPDATE members SET last_statement_sent_at=now(), last_statement_channel='email' WHERE id=$1", [id]); } else { failed.push(id); console.error('bulk send fail', id, r.error); }
       await new Promise(res=>setTimeout(res, 300)); // gentle pacing
     }catch(e){ failed.push(id); console.error('bulk send fail', id, e.message); }
   }
