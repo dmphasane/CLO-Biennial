@@ -282,21 +282,27 @@ app.post('/api/register', regLimiter, async (req, res)=>{
       [m.id, m.fullName, m.conferenceCode, m.localChurch, m.email, m.phone, m.accommodationOption,
        m.expectedMonthlyTotal, m.expectedAccom, m.expectedReg, m.paymentRef, m.registrationDate, JSON.stringify(m.ledger||{}), m.cohort||'new', m.district||null]
     );
-    // If the member added a new station, persist it so others can select it next time
-    if(m.district && m.localChurch){
-      try{
-        await query(
-          `INSERT INTO custom_stations (conference_code, district, station) VALUES ($1,$2,$3)
-           ON CONFLICT (conference_code, district, station) DO NOTHING`,
-          [String(m.conferenceCode).toUpperCase(), String(m.district).trim(), String(m.localChurch).trim()]
-        );
-      }catch(e){ console.error('station upsert on register failed:', e.message); }
-    }
-    try{ await logAudit({ name:'Self-Registration', role:'Member' }, 'Register', m.paymentRef); }catch(e){}
-    // Respond to the registrant IMMEDIATELY — do not make them wait for the email.
+    // Respond to the registrant IMMEDIATELY once the member row is saved. All
+    // non-essential writes (station list, audit, email) happen AFTER the response
+    // so a slow DB/email operation can never make Render time out with a 502.
     res.json({ ok:true });
-    // Send confirmation email AFTER responding (fully detached, fully guarded so a
-    // failure here can never crash the process or 503 the request).
+
+    // Deferred, fully-guarded follow-up work
+    setImmediate(async ()=>{
+      // Persist a newly-added station so others can select it next time
+      if(m.district && m.localChurch){
+        try{
+          await query(
+            `INSERT INTO custom_stations (conference_code, district, station) VALUES ($1,$2,$3)
+             ON CONFLICT (conference_code, district, station) DO NOTHING`,
+            [String(m.conferenceCode).toUpperCase(), String(m.district).trim(), String(m.localChurch).trim()]
+          );
+        }catch(e){ console.error('station upsert on register failed:', e.message); }
+      }
+      try{ await logAudit({ name:'Self-Registration', role:'Member' }, 'Register', m.paymentRef); }catch(e){}
+    });
+
+    // Send confirmation email AFTER responding (fully detached, fully guarded).
     if(m.email){
       setImmediate(async ()=>{
         try{
