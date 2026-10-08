@@ -608,6 +608,19 @@ app.get('/api/health', async (req,res)=>{
   catch(e){ res.status(500).json({ ok:false, db:'error', error:String(e.message||e), code:e.code||'', hasDbUrl: !!process.env.DATABASE_URL }); }
 });
 
+// Diagnostic: which env var NAMES does the running process see? (names only, no
+// secret values). Lets us confirm Render actually passed DATABASE_URL in.
+app.get('/api/debug/env-check', (req,res)=>{
+  const names = Object.keys(process.env).sort();
+  const dbLike = names.filter(n=>/DATAB|PG|POSTGR|URL/i.test(n));
+  res.json({
+    hasDatabaseUrl: !!process.env.DATABASE_URL,
+    databaseUrlLength: (process.env.DATABASE_URL||'').length,
+    dbRelatedVarNames: dbLike,          // e.g. shows if it's spelled DATABSE_URL
+    appVarNames: names.filter(n=>/TEST_MODE|BREVO|GMAIL|JWT|CLOUDINARY|PASSWORD/i.test(n)),
+  });
+});
+
 app.listen(PORT, async ()=>{
   console.log(`NEDLO server running on port ${PORT}`);
   await autoInitDb();
