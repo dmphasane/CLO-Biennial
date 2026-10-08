@@ -42,7 +42,13 @@ async function autoInitDb(){
     }
     console.log('Database auto-init complete (schema + users).');
   }catch(e){
-    console.error('DB auto-init failed:', e.message);
+    // Log the FULL error — AggregateError (Supabase pooler) has a blank .message,
+    // so surface the code, the nested errors, and the stack to diagnose it.
+    console.error('DB auto-init failed. name=', e && e.name, 'code=', e && e.code, 'message=', e && e.message);
+    if(e && e.errors && Array.isArray(e.errors)){
+      e.errors.forEach((sub,i)=>console.error('  sub-error['+i+']:', sub && sub.code, sub && sub.message));
+    }
+    if(e && e.stack) console.error(e.stack);
   }
 }
 
