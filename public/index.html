@@ -137,7 +137,7 @@ select[multiple]{height:auto;min-height:80px;}
       </select>
     </div>
     <button class="btn btn-primary" style="width:100%;justify-content:center;padding:12px;" onclick="doLogin()">Sign In</button>
-    <p style="text-align:center;margin-top:14px;font-size:11px;color:var(--muted);">Protected under POPIA. Authorised personnel only. <strong>v3.4-build16</strong></p>
+    <p style="text-align:center;margin-top:14px;font-size:11px;color:var(--muted);">Protected under POPIA. Authorised personnel only. <strong>v3.5-build17</strong></p>
   </div>
 </div>
 
@@ -423,6 +423,21 @@ select[multiple]{height:auto;min-height:80px;}
           <button class="btn btn-primary btn-sm" onclick="bulkSendEmails()">📤 Bulk Send All</button>
           <button class="btn btn-outline btn-sm" onclick="bulkExportLettersPDF()">🖨 Export All as PDF</button>
         </div>
+      </div>
+
+      <!-- General Announcement -->
+      <div class="card mb-4" style="border-left:4px solid var(--accent);">
+        <div class="card-title">📣 Send General Announcement to Members</div>
+        <div class="alert alert-info" style="font-size:12px;">Use this to email ALL members a general notice (e.g. the duplicate-statement correction). Edit the subject and message, Preview it, then Send to All. Only members with an email on file receive it.</div>
+        <div class="form-group"><label>Subject</label>
+          <input id="ann-subject" value="Important Notice: Correction to Contribution Statements"/></div>
+        <div class="form-group"><label>Message (you can edit freely — basic HTML allowed)</label>
+          <textarea id="ann-body" rows="12" style="font-family:inherit;font-size:13px;line-height:1.5;"></textarea></div>
+        <div class="flex gap-2">
+          <button class="btn btn-outline btn-sm" onclick="previewAnnouncement()">👁 Preview</button>
+          <button class="btn btn-primary btn-sm" onclick="sendAnnouncementToAll()">📣 Send to All Members</button>
+        </div>
+        <div id="ann-preview" style="display:none;margin-top:14px;border:1px solid var(--border);border-radius:8px;padding:14px;background:#fff;"></div>
       </div>
       <div class="card mb-4">
         <div class="card-title">Letter Settings</div>
@@ -849,7 +864,7 @@ function showPage(name, btn){
   if(name==='statements') renderEntriesTable();
   if(name==='exceptions') renderExceptions();
   if(name==='rooms') renderRooms();
-  if(name==='comms') renderCommsTable();
+  if(name==='comms'){ renderCommsTable(); if(typeof ensureAnnouncementPrefill==='function') ensureAnnouncementPrefill(); }
   if(name==='audit') renderAuditTable();
 }
 
@@ -4705,6 +4720,64 @@ async function bulkSendEmails(){
   }catch(e){
     alert('Bulk send failed: '+e.message);
   }
+}
+
+// ── General announcement to all members ──
+const DEFAULT_ANNOUNCEMENT = [
+  '<p>We are writing to inform you of a recent correction made to the NEDLO Biennial 2027 Stokvel Fund contribution statements.</p>',
+  '<p>Due to a <strong>system glitch</strong>, some statements temporarily reflected <strong>duplicated payment entries</strong>, which overstated the total amounts received. We wish to assure you that this was a display and processing error only &ndash; <strong>no actual funds were duplicated, lost, or misallocated</strong>, and your bank payments remain safe and correctly recorded.</p>',
+  '<p>Please note that <strong>not all members were affected</strong> by this duplication. If your previous statement appeared to show repeated payments, kindly disregard those figures.</p>',
+  '<p>The matter has now been <strong>fully investigated and corrected</strong>. Your <strong>end of October statement</strong> will reflect the <strong>accurate and up-to-date</strong> record of your contributions.</p>',
+  '<p>We sincerely apologise for any confusion or concern this may have caused, and we thank you for your patience and continued commitment to the Biennial 2027 Stokvel Fund.</p>',
+  '<p>Should you have any questions about your contributions, please reply to this email and we will gladly assist.</p>'
+].join('\n');
+
+function ensureAnnouncementPrefill(){
+  const body = document.getElementById('ann-body');
+  if(body && !body.value.trim()) body.value = DEFAULT_ANNOUNCEMENT;
+}
+function previewAnnouncement(){
+  ensureAnnouncementPrefill();
+  const subject = document.getElementById('ann-subject').value.trim();
+  const bodyHtml = document.getElementById('ann-body').value;
+  const el = document.getElementById('ann-preview');
+  el.style.display='block';
+  el.innerHTML = `
+    <div style="border-bottom:3px solid var(--primary);padding-bottom:10px;margin-bottom:12px;">
+      <div style="font-size:15px;font-weight:700;color:var(--primary);">NEDLO Biennial 2027 Stokvel Fund</div>
+      <div style="font-size:11px;color:var(--muted);">19th Episcopal District Lay Organisation</div>
+    </div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:8px;"><strong>Subject:</strong> ${subject||'(no subject)'}</div>
+    <p>Dear Member,</p>
+    ${bodyHtml}
+    <div style="border-top:1px solid var(--border);padding-top:10px;margin-top:12px;font-size:12px;">
+      Yours in service,<br/><strong>NEDLO Financial Secretary's Office</strong><br/>nedloregistration@gmail.com
+    </div>`;
+}
+async function sendAnnouncementToAll(){
+  ensureAnnouncementPrefill();
+  const subject = document.getElementById('ann-subject').value.trim();
+  const bodyHtml = document.getElementById('ann-body').value.trim();
+  if(!subject){ alert('Please enter a subject.'); return; }
+  if(!bodyHtml){ alert('Please enter the message body.'); return; }
+  const withEmail = DB.members.filter(m=>m.email && m.email.includes('@')).length;
+  if(!withEmail){ alert('No members have an email address on file.'); return; }
+  if(!confirm('Send this announcement to ALL '+withEmail+' members who have an email address on file?\n\nSubject: '+subject)) return;
+  const btn = (window.event && window.event.target); let oldLabel;
+  if(btn){ oldLabel=btn.textContent; btn.disabled=true; btn.textContent='⏳ Sending…'; }
+  try{
+    if(typeof wakeServer==='function') await wakeServer();
+    const resp = await fetch('/api/send-announcement', {
+      method:'POST',
+      headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer '+AUTH_TOKEN },
+      body: JSON.stringify({ subject, bodyHtml })
+    });
+    if(!resp.ok){ const t=await resp.text().catch(()=> ''); alert('Send failed — HTTP '+resp.status+': '+t.slice(0,300)); return; }
+    const r = await resp.json();
+    auditLog('Announcement', 'Sent announcement "'+subject+'" to '+r.sent+' members');
+    alert('Announcement sent to '+r.sent+' member(s).'+(r.failed?(' '+r.failed+' failed.'):'')+(r.totalWithEmail?(' ('+r.totalWithEmail+' had email addresses.)'):''));
+  }catch(e){ alert('Send failed: '+(e&&e.message?e.message:e)); }
+  finally{ if(btn){ btn.disabled=false; btn.textContent=oldLabel||'📣 Send to All Members'; } }
 }
 
 function printLetter(){

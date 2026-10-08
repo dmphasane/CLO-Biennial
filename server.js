@@ -520,6 +520,54 @@ app.post('/api/send-bulk', authRequired, async (req, res)=>{
   res.json({ ok:true, sent, skipped, failed:failed.length, sentIds });
 });
 
+// ─── EMAIL: send a general announcement to all (or selected) members ───
+// Wraps the provided subject/body (HTML) in the NEDLO letterhead and emails it.
+app.post('/api/send-announcement', authRequired, async (req, res)=>{
+  const { subject, bodyHtml, memberIds } = req.body || {};
+  if(!subject || !bodyHtml) return res.status(400).json({ error:'subject and bodyHtml are required' });
+  // Resolve recipient list
+  let recipients = [];
+  try{
+    if(Array.isArray(memberIds) && memberIds.length){
+      const params = memberIds.map((_,i)=>'$'+(i+1)).join(',');
+      const r = await query(`SELECT full_name, email FROM members WHERE id IN (${params})`, memberIds);
+      recipients = r.rows;
+    } else {
+      const r = await query('SELECT full_name, email FROM members');
+      recipients = r.rows;
+    }
+  }catch(e){ return res.status(500).json({ error:'Could not load members: '+e.message }); }
+
+  const withEmail = recipients.filter(m=>m.email && String(m.email).includes('@'));
+  if(!withEmail.length) return res.status(400).json({ error:'No members with a valid email address.' });
+
+  // Letterhead wrapper (ASCII/entities only, UTF-8 safe)
+  const wrap = (name, inner) => `<!DOCTYPE html><html><head><meta charset="utf-8"/></head>
+    <body style="margin:0;padding:0;background:#f0f4f8;">
+    <div style="font-family:'Segoe UI',Arial,sans-serif;font-size:13px;color:#1f2937;max-width:700px;margin:0 auto;padding:16px;">
+      <div style="border-bottom:3px solid #1a3a6b;padding-bottom:12px;margin-bottom:14px;">
+        <span style="font-size:16px;font-weight:700;color:#1a3a6b;">NEDLO Biennial 2027 Stokvel Fund</span><br/>
+        <span style="font-size:11px;color:#6b7280;">19th Episcopal District Lay Organisation</span>
+      </div>
+      <p>Dear ${name||'Member'},</p>
+      ${inner}
+      <div style="border-top:1px solid #e5e7eb;padding-top:12px;margin-top:16px;font-size:12px;">
+        <p>Yours in service,<br/><strong>NEDLO Financial Secretary's Office</strong><br/>
+        <a href="mailto:${process.env.GMAIL_USER||'nedloregistration@gmail.com'}">${process.env.GMAIL_USER||'nedloregistration@gmail.com'}</a></p>
+      </div>
+    </div></body></html>`;
+
+  let sent=0, failed=0;
+  for(const m of withEmail){
+    const first = (m.full_name||'').trim().split(' ')[0] || 'Member';
+    const r = await sendEmail({ to: m.email, subject, html: wrap(first, bodyHtml) });
+    if(r.ok) sent++; else { failed++; console.error('announcement send fail', m.email, r.error); }
+    await new Promise(x=>setTimeout(x, 250)); // gentle pacing
+  }
+  await logAudit(req.user, 'Announcement', `Sent announcement "${subject}" to ${sent} members (${failed} failed)`);
+  res.json({ ok:true, sent, failed, totalWithEmail: withEmail.length });
+});
+
 app.get('/api/health', async (req,res)=>{
   try{ await query('SELECT 1'); res.json({ ok:true, db:'connected', testMode:TEST_MODE, time:new Date().toISOString() }); }
   catch(e){ res.status(500).json({ ok:false, db:'error', error:String(e.message||e), code:e.code||'', hasDbUrl: !!process.env.DATABASE_URL }); }
