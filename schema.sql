@@ -32,13 +32,14 @@ CREATE TABLE IF NOT EXISTS members (
   updated_at TIMESTAMPTZ DEFAULT now()
 );
 
-CREATE INDEX IF NOT EXISTS idx_members_ref ON members(payment_ref);
-CREATE INDEX IF NOT EXISTS idx_members_conf ON members(conference_code);
--- Add columns if upgrading an existing database
+-- Add columns FIRST if upgrading an existing database (before any indexes that use them)
 ALTER TABLE members ADD COLUMN IF NOT EXISTS cohort TEXT DEFAULT 'legacy';
 ALTER TABLE members ADD COLUMN IF NOT EXISTS last_statement_sent_at TIMESTAMPTZ;
 ALTER TABLE members ADD COLUMN IF NOT EXISTS district TEXT;
 ALTER TABLE members ADD COLUMN IF NOT EXISTS last_statement_channel TEXT;
+
+CREATE INDEX IF NOT EXISTS idx_members_ref ON members(payment_ref);
+CREATE INDEX IF NOT EXISTS idx_members_conf ON members(conference_code);
 
 CREATE TABLE IF NOT EXISTS entries (
   id TEXT PRIMARY KEY,
@@ -60,13 +61,14 @@ CREATE TABLE IF NOT EXISTS entries (
   created_at TIMESTAMPTZ DEFAULT now()
 );
 
+-- Add columns FIRST if upgrading an existing database (before any indexes that use them)
+ALTER TABLE entries ADD COLUMN IF NOT EXISTS fingerprint TEXT;
+ALTER TABLE entries ADD COLUMN IF NOT EXISTS upload_id TEXT;
+
 CREATE INDEX IF NOT EXISTS idx_entries_member ON entries(linked_member_id);
 CREATE INDEX IF NOT EXISTS idx_entries_status ON entries(match_status);
 CREATE INDEX IF NOT EXISTS idx_entries_fp ON entries(fingerprint);
 CREATE INDEX IF NOT EXISTS idx_entries_upload ON entries(upload_id);
--- Add columns if upgrading an existing database
-ALTER TABLE entries ADD COLUMN IF NOT EXISTS fingerprint TEXT;
-ALTER TABLE entries ADD COLUMN IF NOT EXISTS upload_id TEXT;
 
 -- Custom (user-added) stations that extend the built-in Conference/District/Station list
 CREATE TABLE IF NOT EXISTS custom_stations (

@@ -81,6 +81,11 @@ app.get('/register-remote', (req, res)=>{
   res.sendFile(path.join(__dirname, 'public', 'register-remote.html'));
 });
 
+// Public help / user guide page (member-facing, no sensitive admin details)
+app.get(['/help', '/guide'], (req, res)=>{
+  res.sendFile(path.join(__dirname, 'public', 'help.html'));
+});
+
 // Rate limit auth endpoint
 const authLimiter = rateLimit({ windowMs: 15*60*1000, max: 20 });
 

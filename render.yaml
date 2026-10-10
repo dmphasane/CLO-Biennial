@@ -13,6 +13,9 @@ services:
         value: production
       - key: JWT_SECRET
         generateValue: true
+      # DATABASE_URL is auto-wired from the Render-managed Postgres below.
+      # DO NOT set DATABASE_URL manually in the dashboard — a manual value will
+      # conflict with this binding and point the app at the wrong database.
       - key: DATABASE_URL
         fromDatabase:
           name: nedlo-stokvel-db
