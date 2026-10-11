@@ -284,10 +284,15 @@ function optCard(key,o){
   </div>`;
 }
 const list = document.getElementById('options-list');
-let listHtml = '<div style="font-size:12px;font-weight:700;color:var(--primary);margin:4px 0 8px;text-transform:uppercase;letter-spacing:.5px;">New Options (The Capital / The Catalyst)</div>';
-Object.entries(OPTIONS).forEach(([key, o])=>{ if(!EXISTING_HOTEL_KEYS.includes(key)) listHtml += optCard(key,o); });
-listHtml += '<div style="font-size:12px;font-weight:700;color:var(--primary);margin:16px 0 8px;text-transform:uppercase;letter-spacing:.5px;">Existing Hotels (over 8 months)</div>';
-EXISTING_HOTEL_KEYS.forEach(key=>{ listHtml += optCard(key, OPTIONS[key]); });
+// Registration Only stays pinned at the top; all accommodation options follow,
+// sorted by monthly payment (cheapest first) so members see affordable options first.
+const sortedKeys = Object.keys(OPTIONS).sort((a,b)=>{
+  if(OPTIONS[a].regOnly) return -1;   // Registration Only always first
+  if(OPTIONS[b].regOnly) return 1;
+  return OPTIONS[a].total - OPTIONS[b].total; // then cheapest monthly first
+});
+let listHtml = '';
+sortedKeys.forEach(key=>{ listHtml += optCard(key, OPTIONS[key]); });
 list.innerHTML = listHtml;
 
 function selectOption(key){

@@ -185,10 +185,15 @@ function rCard(k,o){
     <div style="font-size:11px;color:var(--muted);margin-top:2px;">📅 ${dur}</div>
   </div>`;
 }
-let rHtml='<div style="font-size:12px;font-weight:700;color:var(--primary);margin:4px 0 8px;">New Options</div>';
-Object.entries(OPTIONS).forEach(([k,o])=>{ if(!EXISTING_HOTEL_KEYS.includes(k)) rHtml+=rCard(k,o); });
-rHtml+='<div style="font-size:12px;font-weight:700;color:var(--primary);margin:16px 0 8px;">Existing Hotels (over 8 months)</div>';
-EXISTING_HOTEL_KEYS.forEach(k=>{rHtml+=rCard(k,OPTIONS[k]);});
+// Registration Only stays pinned at the top; all accommodation options follow,
+// sorted by monthly payment (cheapest first).
+const sortedKeys=Object.keys(OPTIONS).sort((a,b)=>{
+  if(OPTIONS[a].regOnly) return -1;
+  if(OPTIONS[b].regOnly) return 1;
+  return OPTIONS[a].total - OPTIONS[b].total;
+});
+let rHtml='';
+sortedKeys.forEach(k=>{rHtml+=rCard(k,OPTIONS[k]);});
 list.innerHTML=rHtml;
 function pick(k){sel=k;document.querySelectorAll('.option-card').forEach(c=>c.classList.remove('selected'));document.getElementById('o-'+k).classList.add('selected');const o=OPTIONS[k];document.getElementById('summary-section').classList.remove('hidden');document.getElementById('s-option').textContent=k;document.getElementById('s-hotel').textContent=o.hotel+' – '+o.type;document.getElementById('s-total').textContent=fmt(o.total);document.getElementById('s-total12').textContent=fmt(o.total*o.months)+' ('+o.months+' mo)';const n=document.getElementById('r-name').value.trim(),c=document.getElementById('r-conf').value;document.getElementById('s-ref').textContent=(c&&n)?(c+'-'+n).toUpperCase():'[Enter name & conference above]';}
 ['r-name','r-conf'].forEach(id=>document.getElementById(id).addEventListener('input',()=>{if(sel)pick(sel);}));
