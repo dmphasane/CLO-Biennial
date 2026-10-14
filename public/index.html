@@ -203,6 +203,7 @@ select[multiple]{height:auto;min-height:80px;}
           <button class="btn btn-outline btn-sm" onclick="exportMembersCSV()">📤 Export CSV</button>
           <button class="btn btn-outline btn-sm" onclick="flagLegacyMembers()" title="Mark members registered before 1 Oct 2026 as the legacy (Jun–May 12-month) cohort">🏷 Flag Legacy</button>
           <button class="btn btn-warning btn-sm" onclick="findDuplicateMembers()" title="Scan the register for likely duplicate members (same person under different names)">🔍 Find Duplicate Members</button>
+          <button class="btn btn-warning btn-sm" onclick="run4NightCorrection()" title="One-time: correct accommodation amounts from the old 5-night basis to the correct 4-night basis. Shows a dry-run before applying.">🏨 4-Night Price Correction</button>
           <button class="btn btn-primary btn-sm" onclick="openMemberModal()">+ Add Member</button>
         </div>
       </div>
@@ -724,16 +725,37 @@ function monthly(accomTotal, months){ return parseFloat(((accomTotal + REG_TOTAL
 const OPTIONS_NEW = {
   'REG-ONLY': { hotel:'Registration Only', type:'No Accommodation', accomTotal:0, regTotal:REG_TOTAL,
                 total: parseFloat((REG_TOTAL/3).toFixed(2)), accom:0, reg: parseFloat((REG_TOTAL/3).toFixed(2)), scheduleKey:'regonly' },
-  'CAP-S':    { hotel:'The Capital', type:'Single B&B', accomTotal:12250, regTotal:REG_TOTAL,
-                total: monthly(12250,8), accom: parseFloat((12250/8).toFixed(2)), reg: parseFloat((REG_TOTAL/8).toFixed(2)), scheduleKey:'new' },
-  'CAP-SH':   { hotel:'The Capital', type:'Sharing B&B (per person)', accomTotal:6900, regTotal:REG_TOTAL,
-                total: monthly(6900,8), accom: parseFloat((6900/8).toFixed(2)), reg: parseFloat((REG_TOTAL/8).toFixed(2)), scheduleKey:'new' },
-  'CAT-S':    { hotel:'The Catalyst', type:'Single B&B', accomTotal:7950, regTotal:REG_TOTAL,
-                total: monthly(7950,8), accom: parseFloat((7950/8).toFixed(2)), reg: parseFloat((REG_TOTAL/8).toFixed(2)), scheduleKey:'new' },
-  'CAT-SH':   { hotel:'The Catalyst', type:'Sharing B&B (per person)', accomTotal:4725, regTotal:REG_TOTAL,
-                total: monthly(4725,8), accom: parseFloat((4725/8).toFixed(2)), reg: parseFloat((REG_TOTAL/8).toFixed(2)), scheduleKey:'new' },
+  // Accommodation totals below are 4-night figures (updated from the original 5-night basis).
+  'CAP-S':    { hotel:'The Capital', type:'Single B&B', accomTotal:9800, regTotal:REG_TOTAL,
+                total: monthly(9800,8), accom: parseFloat((9800/8).toFixed(2)), reg: parseFloat((REG_TOTAL/8).toFixed(2)), scheduleKey:'new' },
+  'CAP-SH':   { hotel:'The Capital', type:'Sharing B&B (per person)', accomTotal:5520, regTotal:REG_TOTAL,
+                total: monthly(5520,8), accom: parseFloat((5520/8).toFixed(2)), reg: parseFloat((REG_TOTAL/8).toFixed(2)), scheduleKey:'new' },
+  'CAT-S':    { hotel:'The Catalyst', type:'Single B&B', accomTotal:6360, regTotal:REG_TOTAL,
+                total: monthly(6360,8), accom: parseFloat((6360/8).toFixed(2)), reg: parseFloat((REG_TOTAL/8).toFixed(2)), scheduleKey:'new' },
+  'CAT-SH':   { hotel:'The Catalyst', type:'Sharing B&B (per person)', accomTotal:3780, regTotal:REG_TOTAL,
+                total: monthly(3780,8), accom: parseFloat((3780/8).toFixed(2)), reg: parseFloat((REG_TOTAL/8).toFixed(2)), scheduleKey:'new' },
+  // NOTE: OPT-1..6 are shared between legacy (12-month) and new (8-month) members and
+  // are distinguished only by m.cohort, not by code. They therefore remain aliased to
+  // OPTIONS_LEGACY here. Updating existing-hotel accommodation totals to the 4-night
+  // basis for ALL affected members (legacy + new) is handled by the Stage 2 correction,
+  // which recalculates each member's stored figures directly. Changing these shared
+  // entries in-place would silently alter legacy members' expected amounts and ledgers.
   'OPT-1': OPTIONS_LEGACY['OPT-1'], 'OPT-2': OPTIONS_LEGACY['OPT-2'], 'OPT-3': OPTIONS_LEGACY['OPT-3'],
   'OPT-4': OPTIONS_LEGACY['OPT-4'], 'OPT-5': OPTIONS_LEGACY['OPT-5'], 'OPT-6': OPTIONS_LEGACY['OPT-6'],
+  // NEW-cohort existing-hotel options (8-month, 4-night accommodation). Distinct codes
+  // from the legacy OPT-1..6 so new and legacy members never collide in reconciliation.
+  'OPT-1N': { hotel:'Sandton Sun',    type:'Not Sharing', accomTotal:15820, regTotal:REG_TOTAL,
+              total: monthly(15820,8), accom: parseFloat((15820/8).toFixed(2)), reg: parseFloat((REG_TOTAL/8).toFixed(2)), scheduleKey:'new' },
+  'OPT-2N': { hotel:'Sandton Sun',    type:'Sharing',     accomTotal:8710,  regTotal:REG_TOTAL,
+              total: monthly(8710,8),  accom: parseFloat((8710/8).toFixed(2)),  reg: parseFloat((REG_TOTAL/8).toFixed(2)), scheduleKey:'new' },
+  'OPT-3N': { hotel:'Sandton Towers', type:'Not Sharing', accomTotal:17020, regTotal:REG_TOTAL,
+              total: monthly(17020,8), accom: parseFloat((17020/8).toFixed(2)), reg: parseFloat((REG_TOTAL/8).toFixed(2)), scheduleKey:'new' },
+  'OPT-4N': { hotel:'Sandton Towers', type:'Sharing',     accomTotal:8510,  regTotal:REG_TOTAL,
+              total: monthly(8510,8),  accom: parseFloat((8510/8).toFixed(2)),  reg: parseFloat((REG_TOTAL/8).toFixed(2)), scheduleKey:'new' },
+  'OPT-5N': { hotel:'Garden Court',   type:'Not Sharing', accomTotal:7180,  regTotal:REG_TOTAL,
+              total: monthly(7180,8),  accom: parseFloat((7180/8).toFixed(2)),  reg: parseFloat((REG_TOTAL/8).toFixed(2)), scheduleKey:'new' },
+  'OPT-6N': { hotel:'Garden Court',   type:'Sharing',     accomTotal:4170,  regTotal:REG_TOTAL,
+              total: monthly(4170,8),  accom: parseFloat((4170/8).toFixed(2)),  reg: parseFloat((REG_TOTAL/8).toFixed(2)), scheduleKey:'new' },
 };
 const OPTIONS = Object.assign({}, OPTIONS_LEGACY, OPTIONS_NEW);
 const CONF_CODES = ['ECLO','NCLO','WCLO','OCLO','MMMCLO'];
@@ -995,16 +1017,176 @@ function updateAllMemberRates(){
     if(!o) return;
     if(o.flexAmount) return; // skip flex members
     // Only members on the new-option codes get auto-synced to the OPTIONS_NEW rates.
-    const isNewOption = ['REG-ONLY','CAP-S','CAP-SH','CAT-S','CAT-SH'].includes(m.accommodationOption);
+    // Includes the OPT-xN existing-hotel new-cohort codes; legacy OPT-1..6 stay locked.
+    const isNewOption = ['REG-ONLY','CAP-S','CAP-SH','CAT-S','CAT-SH',
+      'OPT-1N','OPT-2N','OPT-3N','OPT-4N','OPT-5N','OPT-6N'].includes(m.accommodationOption);
     if(!isNewOption) return; // legacy OPT-1..6 amounts are locked — never overwrite
     if(m.expectedMonthlyTotal !== o.total || m.expectedAccom !== o.accom || m.expectedReg !== o.reg){
       m.expectedMonthlyTotal = o.total;
       m.expectedAccom = o.accom;
       m.expectedReg = o.reg;
+      // Rebuild the ledger so month-by-month allocations match the new monthly amount
+      // (otherwise a changed rate would leave stale PAID/received figures behind).
+      if(typeof recalcLedgerForMember === 'function') recalcLedgerForMember(m.id);
       updated++;
     }
   });
   if(updated > 0) saveDB();
+}
+
+// ═══════════════════════════════════════════════════════════
+// STAGE 2 — 4-NIGHT ACCOMMODATION PRICE CORRECTION
+// ═══════════════════════════════════════════════════════════
+// Canonical 4-night accommodation TOTAL (per person) by option code. Legacy and new
+// codes for the same hotel/room map to the same accommodation total; the monthly split
+// differs only by the member's schedule length (legacy 12 months, new 8 months).
+const ACCOM_4NIGHT = {
+  'OPT-1':15820, 'OPT-2':8710, 'OPT-3':17020, 'OPT-4':8510, 'OPT-5':7180, 'OPT-6':4170,
+  'OPT-1N':15820,'OPT-2N':8710,'OPT-3N':17020,'OPT-4N':8510,'OPT-5N':7180,'OPT-6N':4170,
+  'CAP-S':9800, 'CAP-SH':5520, 'CAT-S':6360, 'CAT-SH':3780,
+  'REG-ONLY':0,
+};
+// Compute the corrected expected figures for a member under the 4-night basis,
+// respecting their cohort schedule. Returns null if the option has no accom mapping
+// or the member is flex/once-off (excluded).
+function compute4NightFigures(m){
+  const opt = OPTIONS[m.accommodationOption];
+  if(!opt || opt.flexAmount || opt.onceOff) return null;
+  if(!(m.accommodationOption in ACCOM_4NIGHT)) return null;
+  const accomTotal = ACCOM_4NIGHT[m.accommodationOption];
+  const months = memberMonths(m); // 3 (reg-only), 8 (new) or 12 (legacy) from member's schedule
+  if(!months) return null;
+  const regTotal = (m.accommodationOption === 'REG-ONLY') ? REG_TOTAL : REG_TOTAL;
+  const expectedAccom = parseFloat((accomTotal/months).toFixed(2));
+  const expectedReg   = parseFloat((regTotal/months).toFixed(2));
+  const expectedMonthlyTotal = parseFloat(((accomTotal+regTotal)/months).toFixed(2));
+  return { months, accomTotal, expectedAccom, expectedReg, expectedMonthlyTotal };
+}
+
+// New-cohort members who registered via the public form BEFORE the OPT-xN codes
+// existed are stored under the legacy codes OPT-1..6 with cohort='new'. They must be
+// remapped to OPT-1N..6N so they reconcile as new-cohort (8-month, 4-night) members
+// and never collide with genuine legacy members. Returns the remapped code or null.
+const LEGACY_TO_NEW_CODE = { 'OPT-1':'OPT-1N','OPT-2':'OPT-2N','OPT-3':'OPT-3N','OPT-4':'OPT-4N','OPT-5':'OPT-5N','OPT-6':'OPT-6N' };
+function newCohortRemapCode(m){
+  if((m.cohort === 'new') && (m.accommodationOption in LEGACY_TO_NEW_CODE)) return LEGACY_TO_NEW_CODE[m.accommodationOption];
+  return null;
+}
+
+// Build a read-only before/after report for every affected member. No writes.
+function dryRun4NightCorrection(){
+  const rows = [];
+  DB.members.forEach(m=>{
+    // If this is a new-cohort member on a legacy existing-hotel code, evaluate the
+    // corrected figures AS IF already remapped to the N code (apply step does the remap).
+    const remap = newCohortRemapCode(m);
+    const mEval = remap ? Object.assign({}, m, { accommodationOption: remap }) : m;
+    const nf = compute4NightFigures(mEval);
+    if(!nf) return;
+    const oldMonthly = Number(m.expectedMonthlyTotal||0);
+    const paid = memberPaid(m.id);
+    const newCommitment = parseFloat((nf.expectedMonthlyTotal*nf.months).toFixed(2));
+    const amountChanged = Math.abs(oldMonthly - nf.expectedMonthlyTotal) >= 0.01;
+    const codeChanged = !!remap;
+    if(!amountChanged && !codeChanged) return;
+    rows.push({
+      id:m.id, ref:m.paymentRef, name:m.fullName, cohort:m.cohort||'legacy',
+      option:m.accommodationOption, newOption: remap || m.accommodationOption, remapped: codeChanged,
+      hotel:(OPTIONS[mEval.accommodationOption]||{}).hotel||'',
+      months:nf.months, oldMonthly, newMonthly:nf.expectedMonthlyTotal,
+      paid, newCommitment, creditAfter: parseFloat((paid - newCommitment).toFixed(2))
+    });
+  });
+  return rows;
+}
+
+// Apply the 4-night correction to all affected members: update expected figures,
+// rebuild each member's ledger against the new monthly amount, save, and audit-log.
+function apply4NightCorrection(rows){
+  let updated = 0;
+  rows.forEach(r=>{
+    const m = DB.members.find(x=>x.id===r.id);
+    if(!m) return;
+    // Remap new-cohort members on legacy existing-hotel codes to the OPT-xN code FIRST,
+    // so figures and ledger are computed against the correct new-cohort option.
+    const remap = newCohortRemapCode(m);
+    if(remap) m.accommodationOption = remap;
+    const nf = compute4NightFigures(m);
+    if(!nf) return;
+    m.expectedAccom = nf.expectedAccom;
+    m.expectedReg = nf.expectedReg;
+    m.expectedMonthlyTotal = nf.expectedMonthlyTotal;
+    recalcLedgerForMember(m.id); // rebuild month-by-month allocation at the new rate
+    updated++;
+  });
+  if(updated>0){
+    saveDB();
+    auditLog('PriceCorrection4Night', `Applied 4-night accommodation correction to ${updated} member(s)`);
+  }
+  return updated;
+}
+
+// UI entry point: show the dry-run, then apply on explicit confirmation.
+function run4NightCorrection(){
+  const rows = dryRun4NightCorrection();
+  if(!rows.length){ alert('No members need correction — all expected amounts already match the 4-night basis.'); return; }
+  let totalCredit = rows.reduce((s,r)=>s+Math.max(0,r.creditAfter),0);
+  let html = `<div class="modal-backdrop" id="corr-modal"><div class="modal" style="width:860px;max-width:96vw;">
+    <div class="modal-title">4-Night Accommodation Price Correction — Dry Run</div>
+    <div class="alert alert-warn" style="font-size:12.5px;">
+      <strong>${rows.length}</strong> member(s) will be updated to the 4-night basis.
+      Review the before/after below. Members who have already paid may show a positive
+      <em>Credit after</em> (overpayment) — their remaining instalments reduce accordingly.
+      <strong>No changes are saved until you click “Apply Correction”.</strong>
+    </div>
+    <div class="table-wrap" style="max-height:50vh;overflow:auto;"><table><thead><tr>
+      <th>Reference</th><th>Name</th><th>Cohort</th><th>Option</th><th>Mo.</th>
+      <th class="text-right">Old /mo</th><th class="text-right">New /mo</th>
+      <th class="text-right">Paid</th><th class="text-right">New Commit.</th><th class="text-right">Credit After</th>
+    </tr></thead><tbody>`;
+  rows.forEach(r=>{
+    const optCell = r.remapped
+      ? `${r.option} <span style="color:var(--muted);">→</span> <strong style="color:var(--primary);">${r.newOption}</strong>`
+      : r.option;
+    html += `<tr>
+      <td class="font-bold">${r.ref}</td><td>${r.name}</td><td>${r.cohort}</td>
+      <td>${optCell}</td><td class="text-center">${r.months}</td>
+      <td class="text-right">${fmt(r.oldMonthly)}</td>
+      <td class="text-right" style="color:var(--primary);font-weight:700;">${fmt(r.newMonthly)}</td>
+      <td class="text-right">${fmt(r.paid)}</td>
+      <td class="text-right">${fmt(r.newCommitment)}</td>
+      <td class="text-right" style="${r.creditAfter>0?'color:var(--success);font-weight:700;':''}">${fmt(r.creditAfter)}</td>
+    </tr>`;
+  });
+  html += `</tbody></table></div>
+    <div class="alert alert-info" style="font-size:12px;margin-top:10px;">Total overpayment credit across members: <strong>${fmt(totalCredit)}</strong></div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="document.getElementById('corr-modal').remove()">Cancel</button>
+      <button class="btn btn-outline btn-sm" onclick="export4NightDryRun()">📊 Export Dry-Run CSV</button>
+      <button class="btn btn-danger" onclick="confirmApply4Night()">Apply Correction</button>
+    </div></div></div>`;
+  const wrap = document.createElement('div'); wrap.innerHTML = html; document.body.appendChild(wrap.firstChild);
+  window.__corr4nightRows = rows; // stash for apply/export
+}
+function export4NightDryRun(){
+  const rows = window.__corr4nightRows||[];
+  if(!rows.length) return;
+  const header = ['Reference','Name','Cohort','OldOption','NewOption','Months','OldMonthly','NewMonthly','Paid','NewCommitment','CreditAfter'];
+  const lines = [header.join(',')].concat(rows.map(r=>[
+    r.ref, '"'+String(r.name).replace(/"/g,'""')+'"', r.cohort, r.option, r.newOption, r.months,
+    r.oldMonthly, r.newMonthly, r.paid, r.newCommitment, r.creditAfter
+  ].join(',')));
+  const blob = new Blob([lines.join('\n')], {type:'text/csv'});
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+  a.download = '4night-correction-dryrun.csv'; a.click();
+}
+function confirmApply4Night(){
+  const rows = window.__corr4nightRows||[];
+  if(!confirm(`Apply the 4-night correction to ${rows.length} member(s)? This updates expected amounts and rebuilds their ledgers. Make sure you have exported a backup (Members → Export CSV) first.`)) return;
+  const n = apply4NightCorrection(rows);
+  const modal = document.getElementById('corr-modal'); if(modal) modal.remove();
+  renderAll();
+  alert(`Done. Corrected ${n} member(s). Review the Dashboard and Reports to verify, then (optionally) send updated statements from Communications.`);
 }
 
 function renderAll(){

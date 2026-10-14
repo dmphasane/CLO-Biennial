@@ -165,24 +165,27 @@ const r2 = n => parseFloat(n.toFixed(2));
 const OPTIONS = {
   // ── New options (Oct 2026 cohort) ──
   'REG-ONLY': { hotel:'Registration Only', type:'No Accommodation', total:r2(REG_TOTAL/3), accom:0, reg:r2(REG_TOTAL/3), months:3, regOnly:true, cohort:'new' },
-  'CAP-S':  { hotel:'The Capital',  type:'Single B&B',               total:r2((12250+REG_TOTAL)/8), accom:r2(12250/8), reg:r2(REG_TOTAL/8), months:8, cohort:'new' },
-  'CAP-SH': { hotel:'The Capital',  type:'Sharing B&B (per person)', total:r2((6900+REG_TOTAL)/8),  accom:r2(6900/8),  reg:r2(REG_TOTAL/8), months:8, cohort:'new' },
-  'CAT-S':  { hotel:'The Catalyst', type:'Single B&B',               total:r2((7950+REG_TOTAL)/8),  accom:r2(7950/8),  reg:r2(REG_TOTAL/8), months:8, cohort:'new' },
-  'CAT-SH': { hotel:'The Catalyst', type:'Sharing B&B (per person)', total:r2((4725+REG_TOTAL)/8),  accom:r2(4725/8),  reg:r2(REG_TOTAL/8), months:8, cohort:'new' },
+  'CAP-S':  { hotel:'The Capital',  type:'Single B&B',               total:r2((9800+REG_TOTAL)/8), accom:r2(9800/8), reg:r2(REG_TOTAL/8), months:8, cohort:'new' },
+  'CAP-SH': { hotel:'The Capital',  type:'Sharing B&B (per person)', total:r2((5520+REG_TOTAL)/8),  accom:r2(5520/8),  reg:r2(REG_TOTAL/8), months:8, cohort:'new' },
+  'CAT-S':  { hotel:'The Catalyst', type:'Single B&B',               total:r2((6360+REG_TOTAL)/8),  accom:r2(6360/8),  reg:r2(REG_TOTAL/8), months:8, cohort:'new' },
+  'CAT-SH': { hotel:'The Catalyst', type:'Sharing B&B (per person)', total:r2((3780+REG_TOTAL)/8),  accom:r2(3780/8),  reg:r2(REG_TOTAL/8), months:8, cohort:'new' },
   // ── Existing hotels, offered to NEW registrants over the 8-month schedule ──
-  // Full commitment = (full accommodation for 5 nights) + R5,700 registration,
+  // Full commitment = (full accommodation for 4 nights) + R5,700 registration,
   // recalculated over 8 months (Oct 2026 – May 2027) for new members.
   // (Legacy members registered before Oct 2026 keep their original 12-month rate
   //  in the admin portal — this public form is for NEW registrations only.)
-  'OPT-1': { hotel:'Sandton Sun',    type:'Not Sharing', accomFull:19775.04, months:8, cohort:'new' },
-  'OPT-2': { hotel:'Sandton Sun',    type:'Sharing',     accomFull:10887.48, months:8, cohort:'new' },
-  'OPT-3': { hotel:'Sandton Towers', type:'Not Sharing', accomFull:21275.04, months:8, cohort:'new' },
-  'OPT-4': { hotel:'Sandton Towers', type:'Sharing',     accomFull:10635.48, months:8, cohort:'new' },
-  'OPT-5': { hotel:'Garden Court',   type:'Not Sharing', accomFull: 8975.04, months:8, cohort:'new' },
-  'OPT-6': { hotel:'Garden Court',   type:'Sharing',     accomFull: 5212.56, months:8, cohort:'new' },
+  // Existing-hotel options use the NEW-cohort codes (OPT-xN) so they reconcile
+  // against the correct 4-night / 8-month figures in the portal, without colliding
+  // with legacy OPT-1..6 members.
+  'OPT-1N': { hotel:'Sandton Sun',    type:'Not Sharing', accomFull:15820.00, months:8, cohort:'new' },
+  'OPT-2N': { hotel:'Sandton Sun',    type:'Sharing',     accomFull: 8710.00, months:8, cohort:'new' },
+  'OPT-3N': { hotel:'Sandton Towers', type:'Not Sharing', accomFull:17020.00, months:8, cohort:'new' },
+  'OPT-4N': { hotel:'Sandton Towers', type:'Sharing',     accomFull: 8510.00, months:8, cohort:'new' },
+  'OPT-5N': { hotel:'Garden Court',   type:'Not Sharing', accomFull: 7180.00, months:8, cohort:'new' },
+  'OPT-6N': { hotel:'Garden Court',   type:'Sharing',     accomFull: 4170.00, months:8, cohort:'new' },
 };
 // Fill in monthly figures for the existing-hotel options over 8 months
-['OPT-1','OPT-2','OPT-3','OPT-4','OPT-5','OPT-6'].forEach(k=>{
+['OPT-1N','OPT-2N','OPT-3N','OPT-4N','OPT-5N','OPT-6N'].forEach(k=>{
   const o = OPTIONS[k];
   o.accom = r2(o.accomFull/8);
   o.reg   = r2(REG_TOTAL/8);
@@ -263,7 +266,7 @@ function onStationChange(){
 }
 
 // Render option cards
-const EXISTING_HOTEL_KEYS = ['OPT-1','OPT-2','OPT-3','OPT-4','OPT-5','OPT-6'];
+const EXISTING_HOTEL_KEYS = ['OPT-1N','OPT-2N','OPT-3N','OPT-4N','OPT-5N','OPT-6N'];
 function optIcon(o){ return o.regOnly?'📋':o.hotel.includes('Capital')?'🏨':o.hotel.includes('Catalyst')?'🏢':o.hotel.includes('Sun')?'☀️':o.hotel.includes('Tower')?'🏨':'🌿'; }
 function optPeriod(o){ return o.regOnly?'Oct–Dec 2026 (3 months)':'Oct 2026–May 2027 (8 months)'; }
 function optCard(key,o){

@@ -116,19 +116,21 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--muted);}
 const REG_TOTAL=5700;const r2=n=>parseFloat(n.toFixed(2));
 const OPTIONS={
   'REG-ONLY':{hotel:'Registration Only',type:'No Accommodation',total:r2(REG_TOTAL/3),accom:0,reg:r2(REG_TOTAL/3),months:3,regOnly:true},
-  'CAP-S':{hotel:'The Capital',type:'Single B&B',total:r2((12250+REG_TOTAL)/8),accom:r2(12250/8),reg:r2(REG_TOTAL/8),months:8},
-  'CAP-SH':{hotel:'The Capital',type:'Sharing B&B (per person)',total:r2((6900+REG_TOTAL)/8),accom:r2(6900/8),reg:r2(REG_TOTAL/8),months:8},
-  'CAT-S':{hotel:'The Catalyst',type:'Single B&B',total:r2((7950+REG_TOTAL)/8),accom:r2(7950/8),reg:r2(REG_TOTAL/8),months:8},
-  'CAT-SH':{hotel:'The Catalyst',type:'Sharing B&B (per person)',total:r2((4725+REG_TOTAL)/8),accom:r2(4725/8),reg:r2(REG_TOTAL/8),months:8},
+  'CAP-S':{hotel:'The Capital',type:'Single B&B',total:r2((9800+REG_TOTAL)/8),accom:r2(9800/8),reg:r2(REG_TOTAL/8),months:8},
+  'CAP-SH':{hotel:'The Capital',type:'Sharing B&B (per person)',total:r2((5520+REG_TOTAL)/8),accom:r2(5520/8),reg:r2(REG_TOTAL/8),months:8},
+  'CAT-S':{hotel:'The Catalyst',type:'Single B&B',total:r2((6360+REG_TOTAL)/8),accom:r2(6360/8),reg:r2(REG_TOTAL/8),months:8},
+  'CAT-SH':{hotel:'The Catalyst',type:'Sharing B&B (per person)',total:r2((3780+REG_TOTAL)/8),accom:r2(3780/8),reg:r2(REG_TOTAL/8),months:8},
   // Existing hotels for NEW registrants, recalculated over 8 months
-  'OPT-1':{hotel:'Sandton Sun',type:'Not Sharing',accomFull:19775.04,months:8},
-  'OPT-2':{hotel:'Sandton Sun',type:'Sharing',accomFull:10887.48,months:8},
-  'OPT-3':{hotel:'Sandton Towers',type:'Not Sharing',accomFull:21275.04,months:8},
-  'OPT-4':{hotel:'Sandton Towers',type:'Sharing',accomFull:10635.48,months:8},
-  'OPT-5':{hotel:'Garden Court',type:'Not Sharing',accomFull:8975.04,months:8},
-  'OPT-6':{hotel:'Garden Court',type:'Sharing',accomFull:5212.56,months:8}
+  // Existing-hotel options use NEW-cohort codes (OPT-xN) to match the portal's
+  // 4-night / 8-month figures and avoid colliding with legacy OPT-1..6.
+  'OPT-1N':{hotel:'Sandton Sun',type:'Not Sharing',accomFull:15820.00,months:8},
+  'OPT-2N':{hotel:'Sandton Sun',type:'Sharing',accomFull:8710.00,months:8},
+  'OPT-3N':{hotel:'Sandton Towers',type:'Not Sharing',accomFull:17020.00,months:8},
+  'OPT-4N':{hotel:'Sandton Towers',type:'Sharing',accomFull:8510.00,months:8},
+  'OPT-5N':{hotel:'Garden Court',type:'Not Sharing',accomFull:7180.00,months:8},
+  'OPT-6N':{hotel:'Garden Court',type:'Sharing',accomFull:4170.00,months:8}
 };
-const EXISTING_HOTEL_KEYS=['OPT-1','OPT-2','OPT-3','OPT-4','OPT-5','OPT-6'];
+const EXISTING_HOTEL_KEYS=['OPT-1N','OPT-2N','OPT-3N','OPT-4N','OPT-5N','OPT-6N'];
 EXISTING_HOTEL_KEYS.forEach(k=>{const o=OPTIONS[k];o.accom=r2(o.accomFull/8);o.reg=r2(REG_TOTAL/8);o.total=r2((o.accomFull+REG_TOTAL)/8);});
 let sel=null;
 function fmt(n){return'R'+Number(n).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g,',');}
