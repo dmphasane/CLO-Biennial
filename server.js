@@ -210,7 +210,8 @@ app.post('/api/entries/bulk', authRequired, async (req, res)=>{
            contrib_month,match_status,linked_member_id,allocated_accom,allocated_reg,resolved_by,resolved_at,fingerprint,upload_id)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
          ON CONFLICT (id) DO UPDATE SET match_status=$9,linked_member_id=$10,allocated_accom=$11,
-           allocated_reg=$12,resolved_by=$13,resolved_at=$14,contrib_month=$8,fingerprint=$15,upload_id=$16`,
+           allocated_reg=$12,resolved_by=$13,resolved_at=$14,contrib_month=$8,fingerprint=$15,upload_id=$16,
+           credit_amount=$7,description=$4`,
         [targetId,e.txnDate,e.valDate,e.description,e.referenceRaw,e.referenceNorm,e.creditAmount,
          e.contribMonth,e.matchStatus,e.linkedMemberId,e.allocatedAccom,e.allocatedReg,e.resolvedBy,e.resolvedAt,e.fingerprint||null,e.uploadId||null]
       );

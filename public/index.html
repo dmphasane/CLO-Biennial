@@ -6,7 +6,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<title>NEDLO Biennial 2027 – Stokvel Fund Reconciliation Tool v4.3-build26</title>
+<title>NEDLO Biennial 2027 – Stokvel Fund Reconciliation Tool v4.4-build27</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -137,7 +137,7 @@ select[multiple]{height:auto;min-height:80px;}
       </select>
     </div>
     <button class="btn btn-primary" style="width:100%;justify-content:center;padding:12px;" onclick="doLogin()">Sign In</button>
-    <p style="text-align:center;margin-top:14px;font-size:11px;color:var(--muted);">Protected under POPIA. Authorised personnel only. <strong>v4.3-build26</strong></p>
+    <p style="text-align:center;margin-top:14px;font-size:11px;color:var(--muted);">Protected under POPIA. Authorised personnel only. <strong>v4.4-build27</strong></p>
     <p style="text-align:center;margin-top:6px;font-size:11px;"><a href="/help" style="color:var(--primary);font-weight:600;text-decoration:none;">❓ Need help? Read the guide</a></p>
   </div>
 </div>
@@ -1472,6 +1472,7 @@ function renderLedgerBody(m){
         <td>${monthLabel(e.contribMonth)||e.contribMonth}</td>
         <td>${statusBadge(e.matchStatus)}</td>
         <td style="white-space:nowrap;">
+          <button class="btn btn-primary btn-sm" onclick="adjustEntryAmount('${e.id}','${m.id}')" title="Shared/joint payment: set THIS member's correct portion of the payment (e.g. change 1800 to 900 for a shared payment). The other member keeps their own portion.">⇄ Adjust</button>
           <button class="btn btn-warning btn-sm" onclick="unlinkEntryFromMember('${e.id}','${m.id}')" title="Wrong member: remove this payment from this member and return it to the Exceptions queue for re-matching">✂️ Unlink</button>
           <button class="btn btn-danger btn-sm" onclick="deleteEntryFromMember('${e.id}','${m.id}')" title="True duplicate: permanently delete this payment (same money imported twice). It will NOT return to Exceptions.">🗑 Delete</button>
         </td></tr>`;
@@ -1541,6 +1542,46 @@ function deleteEntryFromMember(entryId, memberId){
   // Rebuild this member's ledger from their remaining matched entries.
   recalcLedgerForMember(memberId);
   auditLog('EntryDeleted', `Deleted duplicate payment ${e.referenceRaw} (${fmt(e.creditAmount)}, ${e.txnDate}) from ${m.paymentRef}`);
+  saveDB();
+  renderLedgerBody(m);
+  renderAll();
+}
+
+// Adjust THIS member's portion of a (shared/joint) payment. Use when one real
+// payment is shared between members and the full amount was wrongly credited to
+// this member. Sets the entry's amount to this member's correct share and
+// reallocates — the other member's separate portion is untouched.
+function adjustEntryAmount(entryId, memberId){
+  const e = DB.entries.find(x=>x.id===entryId);
+  const m = DB.members.find(x=>x.id===memberId);
+  if(!e || !m) return;
+  const current = Number(e.creditAmount||0);
+  const input = prompt(
+    `Set ${m.fullName}'s portion of this payment.\n\n`+
+    `Payment: ${e.referenceRaw} on ${e.txnDate}\n`+
+    `Currently credited to this member: ${fmt(current)}\n\n`+
+    `Enter this member's correct share (e.g. for a shared R1,800 payment split between two people, enter 900):`,
+    current.toFixed(2)
+  );
+  if(input === null) return; // cancelled
+  const newAmt = parseFloat(String(input).replace(/[^0-9.]/g,''));
+  if(isNaN(newAmt) || newAmt <= 0){ alert('Please enter a valid amount greater than 0.'); return; }
+  if(Math.abs(newAmt - current) < 0.005){ alert('Amount unchanged.'); return; }
+
+  const note = prompt('Optional note (e.g. "Shared R1,800 payment with E. Leketi — R900 each"). Leave blank to skip:', '');
+
+  e.creditAmount = parseFloat(newAmt.toFixed(2));
+  if(note && note.trim()){
+    e.description = (e.description||'') + ' [' + note.trim() + ']';
+  } else {
+    e.description = (e.description||'') + ' [SHARED PAYMENT — portion for ' + m.fullName + ']';
+  }
+  e.resolvedBy = currentUser ? currentUser.name : 'admin';
+  e.resolvedAt = new Date().toISOString();
+
+  // Reallocate at the corrected amount and rebuild this member's ledger.
+  recalcLedgerForMember(memberId);
+  auditLog('EntryAmountAdjusted', `Adjusted ${e.referenceRaw} for ${m.paymentRef}: ${fmt(current)} → ${fmt(e.creditAmount)}`);
   saveDB();
   renderLedgerBody(m);
   renderAll();
