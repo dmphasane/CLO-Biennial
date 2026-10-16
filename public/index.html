@@ -6,7 +6,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<title>NEDLO Biennial 2027 – Stokvel Fund Reconciliation Tool v4.4-build27</title>
+<title>NEDLO Biennial 2027 – Stokvel Fund Reconciliation Tool v4.5-build28</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -137,7 +137,7 @@ select[multiple]{height:auto;min-height:80px;}
       </select>
     </div>
     <button class="btn btn-primary" style="width:100%;justify-content:center;padding:12px;" onclick="doLogin()">Sign In</button>
-    <p style="text-align:center;margin-top:14px;font-size:11px;color:var(--muted);">Protected under POPIA. Authorised personnel only. <strong>v4.4-build27</strong></p>
+    <p style="text-align:center;margin-top:14px;font-size:11px;color:var(--muted);">Protected under POPIA. Authorised personnel only. <strong>v4.5-build28</strong></p>
     <p style="text-align:center;margin-top:6px;font-size:11px;"><a href="/help" style="color:var(--primary);font-weight:600;text-decoration:none;">❓ Need help? Read the guide</a></p>
   </div>
 </div>
@@ -2348,6 +2348,20 @@ function importStatementRows(rows, filename){
     resEl.innerHTML=`<div class="alert alert-error">No rows found in the file. Check the file format.</div>`;
     return;
   }
+  // ── Normalise column headers so lookups never fail on whitespace/case quirks ──
+  // Bank exports (esp. XLSX) frequently have header cells with trailing spaces,
+  // non-breaking spaces, or stray casing (e.g. "DESCRIPTION " or "Description\u00a0").
+  // That made row['DESCRIPTION'] come back undefined and a row's narrative was lost
+  // even though it was present in the file. We rebuild each row with cleaned keys.
+  rows = rows.map(row=>{
+    const clean = {};
+    Object.keys(row||{}).forEach(k=>{
+      const nk = String(k).replace(/\u00a0/g,' ').trim().replace(/\s+/g,' ');
+      // If two headers collapse to the same cleaned name, keep the first non-empty value.
+      if(clean[nk]===undefined || String(clean[nk]).trim()==='') clean[nk] = row[k];
+    });
+    return clean;
+  });
   // Show detected columns for debugging
   const cols = Object.keys(rows[0]||{});
   let imported=0, skipped=0, outPeriod=0;
@@ -2409,8 +2423,20 @@ function importStatementRows(rows, filename){
     const keys = Object.keys(row);
     const txnDate = row['Date'] || row['date'] || row['DATE'] || findCol(row, 'Date','Transaction Date','TransactionDate','Txn Date','Trans Date','Posted Date','Posting Date');
     const valDate = findCol(row, 'Value Date','ValueDate','Value','Effective Date') || txnDate;
-    const desc    = row['DESCRIPTION'] || row['Description'] || row['description'] || findCol(row, 'DESCRIPTION','Description','Narrative','Transaction Description','Details','Particulars');
-    const ref     = row['REFERENCE'] || row['Reference'] || row['reference'] || row['Ref'] || row['REF'] || findCol(row, 'REFERENCE','Reference','Payment Reference','Ref','Beneficiary Reference','Customer Reference','Their Reference','Your Reference');
+    // Case-insensitive direct lookup helper (keys are already whitespace-normalised above)
+    const getCI = (r, ...names)=>{
+      const keys = Object.keys(r);
+      for(const n of names){
+        const target = n.toLowerCase();
+        const k = keys.find(kk => kk.toLowerCase() === target);
+        if(k && r[k]!==undefined && String(r[k]).trim()!=='') return String(r[k]).trim();
+      }
+      return '';
+    };
+    const desc    = getCI(row, 'DESCRIPTION','Description','Narrative','Transaction Description','Details','Particulars')
+                    || findCol(row, 'DESCRIPTION','Description','Narrative','Transaction Description','Details','Particulars');
+    const ref     = getCI(row, 'REFERENCE','Reference','Payment Reference','Ref','Beneficiary Reference','Customer Reference','Their Reference','Your Reference')
+                    || findCol(row, 'REFERENCE','Reference','Payment Reference','Ref','Beneficiary Reference','Customer Reference','Their Reference','Your Reference');
     
     // Try credit-specific column first
     let credit = findAmount(row, 'Credit Amount','Credit','Credits','Money In','Deposits','Credit (ZAR)');
