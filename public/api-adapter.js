@@ -71,6 +71,7 @@ async function apiSaveMember(m){ return apiFetch('/api/members', { method:'POST'
 async function apiDeleteMember(id){ return apiFetch('/api/members/'+id, { method:'DELETE' }); }
 async function apiSaveEntries(entries){ return apiFetch('/api/entries/bulk', { method:'POST', body: JSON.stringify({ entries }) }); }
 async function apiClearEntries(){ return apiFetch('/api/entries', { method:'DELETE' }); }
+async function apiDeleteEntry(id){ return apiFetch('/api/entries/'+id, { method:'DELETE' }); }
 async function apiSaveAlias(refNorm, memberId, memberIds){ return apiFetch('/api/aliases', { method:'POST', body: JSON.stringify({ refNorm, memberId, memberIds }) }); }
 async function apiRegister(m){ return apiFetch('/api/register', { method:'POST', body: JSON.stringify(m) }); }
 async function apiSaveUpload(u){ return apiFetch('/api/uploads', { method:'POST', body: JSON.stringify(u) }); }

@@ -226,6 +226,12 @@ app.delete('/api/entries', authRequired, async (req, res)=>{
   await logAudit(req.user,'ClearEntries','All entries cleared');
   res.json({ ok:true });
 });
+// Delete a SINGLE entry by id (used to permanently remove a true duplicate payment).
+app.delete('/api/entries/:id', authRequired, async (req, res)=>{
+  await query('DELETE FROM entries WHERE id=$1', [req.params.id]);
+  await logAudit(req.user,'EntryDeleted',`Deleted entry ${req.params.id}`);
+  res.json({ ok:true });
+});
 
 // ─── REF ALIASES ───
 app.get('/api/aliases', authRequired, async (req, res)=>{

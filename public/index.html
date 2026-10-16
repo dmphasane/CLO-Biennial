@@ -6,7 +6,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<title>NEDLO Biennial 2027 – Stokvel Fund Reconciliation Tool v4.2-build25</title>
+<title>NEDLO Biennial 2027 – Stokvel Fund Reconciliation Tool v4.3-build26</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -137,7 +137,7 @@ select[multiple]{height:auto;min-height:80px;}
       </select>
     </div>
     <button class="btn btn-primary" style="width:100%;justify-content:center;padding:12px;" onclick="doLogin()">Sign In</button>
-    <p style="text-align:center;margin-top:14px;font-size:11px;color:var(--muted);">Protected under POPIA. Authorised personnel only. <strong>v4.2-build25</strong></p>
+    <p style="text-align:center;margin-top:14px;font-size:11px;color:var(--muted);">Protected under POPIA. Authorised personnel only. <strong>v4.3-build26</strong></p>
     <p style="text-align:center;margin-top:6px;font-size:11px;"><a href="/help" style="color:var(--primary);font-weight:600;text-decoration:none;">❓ Need help? Read the guide</a></p>
   </div>
 </div>
@@ -1471,7 +1471,10 @@ function renderLedgerBody(m){
         <td class="text-right font-bold">${fmt(e.creditAmount)}</td>
         <td>${monthLabel(e.contribMonth)||e.contribMonth}</td>
         <td>${statusBadge(e.matchStatus)}</td>
-        <td><button class="btn btn-danger btn-sm" onclick="unlinkEntryFromMember('${e.id}','${m.id}')" title="Remove this payment from this member and return it to the Exceptions queue for re-matching">✂️ Unlink</button></td></tr>`;
+        <td style="white-space:nowrap;">
+          <button class="btn btn-warning btn-sm" onclick="unlinkEntryFromMember('${e.id}','${m.id}')" title="Wrong member: remove this payment from this member and return it to the Exceptions queue for re-matching">✂️ Unlink</button>
+          <button class="btn btn-danger btn-sm" onclick="deleteEntryFromMember('${e.id}','${m.id}')" title="True duplicate: permanently delete this payment (same money imported twice). It will NOT return to Exceptions.">🗑 Delete</button>
+        </td></tr>`;
     });
     const total=entries.filter(e=>e.matchStatus==='MATCHED').reduce((s,e)=>s+e.creditAmount,0);
     html+=`<tr class="subtotal-row"><td colspan="2">Total Matched</td><td class="text-right">${fmt(total)}</td><td colspan="3"></td></tr>`;
@@ -1512,6 +1515,33 @@ function unlinkEntryFromMember(entryId, memberId){
   auditLog('EntryUnlinked', `Unlinked ${e.referenceRaw} (${fmt(e.creditAmount)}) from ${m.paymentRef}`);
   saveDB();
   // Refresh the open ledger modal and the rest of the UI
+  renderLedgerBody(m);
+  renderAll();
+}
+
+// Permanently DELETE a payment entry (true duplicate — same money imported twice).
+// Unlike Unlink, this removes the entry entirely and does NOT return it to Exceptions.
+function deleteEntryFromMember(entryId, memberId){
+  const e = DB.entries.find(x=>x.id===entryId);
+  const m = DB.members.find(x=>x.id===memberId);
+  if(!e || !m) return;
+  if(!confirm(`PERMANENTLY DELETE this payment of ${fmt(e.creditAmount)} (${e.referenceRaw}, ${e.txnDate}) from ${m.fullName}?\n\nUse this ONLY for a true duplicate (the same money imported twice). The payment will be removed entirely and will NOT return to the Exceptions queue.\n\nThis cannot be undone.`)) return;
+
+  // Remove the entry from the dataset entirely.
+  const idx = DB.entries.findIndex(x=>x.id===entryId);
+  if(idx === -1) return;
+  DB.entries.splice(idx, 1);
+
+  // Delete on the server too — otherwise the generic bulk-upsert save would leave
+  // the row in the database and it would reappear on the next reload.
+  if(typeof apiDeleteEntry === 'function' && AUTH_TOKEN){
+    apiDeleteEntry(entryId).catch(err=>console.error('Server delete failed:', err.message));
+  }
+
+  // Rebuild this member's ledger from their remaining matched entries.
+  recalcLedgerForMember(memberId);
+  auditLog('EntryDeleted', `Deleted duplicate payment ${e.referenceRaw} (${fmt(e.creditAmount)}, ${e.txnDate}) from ${m.paymentRef}`);
+  saveDB();
   renderLedgerBody(m);
   renderAll();
 }
@@ -1568,16 +1598,28 @@ function findDuplicateMembers(){
     if(group.length>1){ used.add(a.id); groups.push(group); }
   }
 
+  // Filter out groups the user has explicitly marked as "not duplicates".
+  const dismissed = new Set(getDismissedDupes());
+  const visibleGroups = groups.filter(grp => !dismissed.has(dupGroupSig(grp)));
+
   const body = document.getElementById('dup-members-body');
-  if(!groups.length){
-    body.innerHTML = '<p style="padding:16px;color:var(--success);">✅ No likely duplicate members found in the register.</p>';
+  const groupsToShow = visibleGroups;
+  if(!groupsToShow.length){
+    const dismissedNote = (groups.length && !groupsToShow.length)
+      ? '<p style="padding:8px 16px;color:var(--muted);font-size:12px;">All suggested groups have been dismissed as “not duplicates”. Use “Reset dismissed” to review them again.</p><div style="padding:0 16px 12px;"><button class="btn btn-outline btn-sm" onclick="resetDismissedDupes()">↺ Reset dismissed</button></div>'
+      : '';
+    body.innerHTML = '<p style="padding:16px;color:var(--success);">✅ No likely duplicate members found in the register.</p>' + dismissedNote;
     document.getElementById('dup-members-modal').style.display='flex';
     return;
   }
-  let html = `<div class="alert alert-warn" style="font-size:12px;">Found <strong>${groups.length}</strong> group(s) of possible duplicates. Compare the payment references and amounts paid, then merge the records that are the same person.</div>`;
-  groups.forEach((grp,gi)=>{
+  let html = `<div class="alert alert-warn" style="font-size:12px;">Found <strong>${groupsToShow.length}</strong> group(s) of possible duplicates. Compare the payment references and amounts paid, then merge true duplicates — or dismiss a group if they are different people.</div>`;
+  groupsToShow.forEach((grp,gi)=>{
+    const sig = dupGroupSig(grp);
     html += `<div style="border:1px solid var(--border);border-radius:8px;padding:10px;margin-bottom:12px;">
-      <div style="font-weight:700;color:var(--primary);margin-bottom:6px;">Group ${gi+1} &ndash; ${grp[0].conferenceCode}</div>
+      <div class="flex justify-between items-center" style="margin-bottom:6px;">
+        <div style="font-weight:700;color:var(--primary);">Group ${gi+1} &ndash; ${grp[0].conferenceCode}</div>
+        <button class="btn btn-outline btn-sm" onclick="dismissDupGroup('${sig}')" title="These are different people — stop flagging them as duplicates">✓ Not duplicates — dismiss</button>
+      </div>
       <table style="width:100%;font-size:12px;"><thead><tr>
         <th style="text-align:left;padding:4px;">Full Name</th>
         <th style="text-align:left;padding:4px;">Reference</th>
@@ -1607,6 +1649,32 @@ function findDuplicateMembers(){
 function startMergeFromDup(memberId){
   document.getElementById('dup-members-modal').style.display='none';
   startMerge(memberId);
+}
+// A stable signature for a duplicate group = its member IDs, sorted and joined.
+// Used to remember which suggested groups the user dismissed as NOT duplicates.
+// Dismissals are stored in localStorage (a per-admin UI preference) because the
+// server DB reload only reconstructs members/entries/aliases/audit/uploads.
+function dupGroupSig(grp){ return grp.map(m=>m.id).sort().join('|'); }
+const DISMISSED_DUPES_KEY = 'nedlo_dismissed_dupes';
+function getDismissedDupes(){
+  try{ return JSON.parse(localStorage.getItem(DISMISSED_DUPES_KEY)||'[]'); }catch(e){ return []; }
+}
+function setDismissedDupes(arr){
+  localStorage.setItem(DISMISSED_DUPES_KEY, JSON.stringify(arr||[]));
+}
+function dismissDupGroup(sig){
+  const list = getDismissedDupes();
+  if(!list.includes(sig)){
+    list.push(sig);
+    setDismissedDupes(list);
+    auditLog('DuplicateDismissed', 'Marked a suggested duplicate group as not duplicates');
+  }
+  findDuplicateMembers(); // re-render without the dismissed group
+}
+function resetDismissedDupes(){
+  setDismissedDupes([]);
+  auditLog('DuplicateDismissReset', 'Cleared all dismissed duplicate groups');
+  findDuplicateMembers();
 }
 
 let mergePrimaryId = null;
