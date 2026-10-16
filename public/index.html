@@ -6,7 +6,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<title>NEDLO Biennial 2027 – Stokvel Fund Reconciliation Tool v4.1-build23</title>
+<title>NEDLO Biennial 2027 – Stokvel Fund Reconciliation Tool v4.2-build24</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -137,7 +137,7 @@ select[multiple]{height:auto;min-height:80px;}
       </select>
     </div>
     <button class="btn btn-primary" style="width:100%;justify-content:center;padding:12px;" onclick="doLogin()">Sign In</button>
-    <p style="text-align:center;margin-top:14px;font-size:11px;color:var(--muted);">Protected under POPIA. Authorised personnel only. <strong>v4.1-build23</strong></p>
+    <p style="text-align:center;margin-top:14px;font-size:11px;color:var(--muted);">Protected under POPIA. Authorised personnel only. <strong>v4.2-build24</strong></p>
     <p style="text-align:center;margin-top:6px;font-size:11px;"><a href="/help" style="color:var(--primary);font-weight:600;text-decoration:none;">❓ Need help? Read the guide</a></p>
   </div>
 </div>
@@ -215,6 +215,13 @@ select[multiple]{height:auto;min-height:80px;}
               <option>ECLO</option><option>NCLO</option><option>WCLO</option>
               <option>OCLO</option><option>MMMCLO</option>
               <option value="__UNASSIGNED__">⚠ Unassigned / Unrecognized</option>
+            </select>
+          </div>
+          <div class="form-group"><label>Clergy</label>
+            <select id="member-filter-clergy" onchange="renderMembersTable()">
+              <option value="">All Members</option>
+              <option value="clergy">Clergy only</option>
+              <option value="lay">Lay only</option>
             </select>
           </div>
           <div class="form-group"><label>Search</label>
@@ -571,6 +578,11 @@ select[multiple]{height:auto;min-height:80px;}
         <div class="form-group"><label>Contact Number</label>
           <input id="m-phone" placeholder="082 000 0000"/></div>
       </div>
+    </div>
+    <div class="form-group">
+      <label style="display:flex;align-items:center;gap:8px;text-transform:none;letter-spacing:0;font-size:13px;cursor:pointer;">
+        <input type="checkbox" id="m-clergy" style="width:auto;"/> Clergy
+      </label>
     </div>
     <div class="form-group"><label>Payment Reference (auto-generated)</label>
       <input id="m-ref" readonly style="background:#f9fafb;color:var(--muted);"/></div>
@@ -1274,6 +1286,7 @@ function openMemberModal(memberId){
     document.getElementById('m-option').value=m.accommodationOption;
     document.getElementById('m-email').value=m.email||'';
     document.getElementById('m-phone').value=m.phone||'';
+    document.getElementById('m-clergy').checked = m.isClergy===true;
   } else {
     document.getElementById('member-modal-title').textContent='Add Member';
     document.getElementById('m-fullname').value='';
@@ -1282,6 +1295,7 @@ function openMemberModal(memberId){
     document.getElementById('m-option').value='OPT-2';
     document.getElementById('m-email').value='';
     document.getElementById('m-phone').value='';
+    document.getElementById('m-clergy').checked = false;
   }
   updateExpected();
   modal.style.display='flex';
@@ -1332,7 +1346,7 @@ function saveMember(){
     DB.members[idx] = { ...old, fullName, conferenceCode:conf, localChurch:church,
       accommodationOption:opt, email, phone,
       expectedMonthlyTotal:o.total, expectedAccom:o.accom, expectedReg:o.reg,
-      paymentRef:ref,
+      paymentRef:ref, isClergy: document.getElementById('m-clergy').checked === true,
       cohort: old.cohort || (isNewOption ? 'new' : 'legacy') };
     auditLog('MemberEdit', 'Edited member '+ref);
   } else {
@@ -1341,6 +1355,7 @@ function saveMember(){
       accommodationOption:opt, email, phone,
       expectedMonthlyTotal:o.total, expectedAccom:o.accom, expectedReg:o.reg,
       paymentRef:ref, registrationDate: today(),
+      isClergy: document.getElementById('m-clergy').checked === true,
       cohort: isNewOption ? 'new' : 'new', // members added now default to 'new' cohort
       ledger: {}
     };
@@ -1721,10 +1736,13 @@ function deleteMember(id){
 function renderMembersTable(){
   const conf = document.getElementById('member-filter-conf')?.value||'';
   const search = (document.getElementById('member-search')?.value||'').toLowerCase();
+  const clergyF = document.getElementById('member-filter-clergy')?.value||'';
   let members = DB.members.filter(m=>{
     if(conf==='__UNASSIGNED__'){ if(CONF_CODES.includes(m.conferenceCode)) return false; }
     else if(conf && m.conferenceCode!==conf) return false;
     if(search && !m.fullName.toLowerCase().includes(search) && !m.paymentRef.toLowerCase().includes(search)) return false;
+    if(clergyF==='clergy' && !m.isClergy) return false;
+    if(clergyF==='lay' && m.isClergy) return false;
     return true;
   });
   // STD-002: sort by conference then surname
@@ -1745,7 +1763,7 @@ function renderMembersTable(){
       <td>${m.fullName}</td>
       <td><span class="badge" style="background:#dbeafe;color:#1e40af;">${m.conferenceCode}</span></td>
       <td>${m.localChurch||'—'}</td>
-      <td>${m.accommodationOption}${isOnceOff?' (Once Off)':''} ${(m.cohort==='new')?'<span class="badge" style="background:#dcfce7;color:#15803d;font-size:9px;">NEW</span>':'<span class="badge" style="background:#f1f5f9;color:#64748b;font-size:9px;">LEG</span>'}</td>
+      <td>${m.accommodationOption}${isOnceOff?' (Once Off)':''} ${(m.cohort==='new')?'<span class="badge" style="background:#dcfce7;color:#15803d;font-size:9px;">NEW</span>':'<span class="badge" style="background:#f1f5f9;color:#64748b;font-size:9px;">LEG</span>'}${m.isClergy?' <span class="badge" style="background:#ede9fe;color:#6d28d9;font-size:9px;">CLERGY</span>':''}</td>
       <td class="text-right">${isOnceOff ? fmt(m.expectedMonthlyTotal)+' (total)' : fmt(m.expectedMonthlyTotal)+'/mo'}</td>
       <td class="text-right">${fmt(m.expectedAccom)}</td>
       <td class="text-right">${fmt(m.expectedReg)}${isOnceOff?' (×12)':''}</td>

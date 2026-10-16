@@ -15,7 +15,8 @@ window.NEDLO_HIERARCHY = {
     "Capital": ["Anna Senatle","Bethel","Ebenezer","Emmanuel","Ludia Phiring","Mogwase","Mt Olivet","Mt Sinai","Nellmapius","Nkosi Memorial","The Ark"],
     "Ga-Rankuwa": ["Agnes B Hildebrand","FH Gow","John E Hunter SoShanguve","Lake Bethesda","Mokone Temple","SS Manyane Memorial","WN Nduna"],
     "NorthEnd": ["Edith Ming Chapel","SPS Chesane","Thoromejane"],
-    "Polokwane District": ["Bethel Ramokgopa","HE Malaka Turfloop","HJ Bryant Bochum","J.E Hunter Seshego"]
+    "Polokwane District": ["Bethel Ramokgopa","HE Malaka Turfloop","HJ Bryant Bochum","J.E Hunter Seshego"],
+    "VHEMBE": ["HB Senatle Cathedral","Charles Rathogwa Ndou Memorial","Sibasa","Spngozwi","Mara","Dzanani","EM Mkahuvha Chapel","Maba Memorial"]
   },
   NCLO: {
     "Bizana": ["Bethel","Ebenezer Temple","HW Henning","J.L Davis Magwa","Mt Zion"],

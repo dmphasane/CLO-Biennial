@@ -37,6 +37,7 @@ ALTER TABLE members ADD COLUMN IF NOT EXISTS cohort TEXT DEFAULT 'legacy';
 ALTER TABLE members ADD COLUMN IF NOT EXISTS last_statement_sent_at TIMESTAMPTZ;
 ALTER TABLE members ADD COLUMN IF NOT EXISTS district TEXT;
 ALTER TABLE members ADD COLUMN IF NOT EXISTS last_statement_channel TEXT;
+ALTER TABLE members ADD COLUMN IF NOT EXISTS is_clergy BOOLEAN DEFAULT false;
 
 CREATE INDEX IF NOT EXISTS idx_members_ref ON members(payment_ref);
 CREATE INDEX IF NOT EXISTS idx_members_conf ON members(conference_code);

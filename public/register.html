@@ -93,6 +93,13 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--muted);}
         <div class="col-half"><div class="form-group"><label>Contact Number *</label>
           <input id="r-phone" type="tel" placeholder="082 000 0000"/></div></div>
       </div>
+      <div class="form-group" style="margin-top:4px;">
+        <label style="display:flex;align-items:center;gap:8px;text-transform:none;letter-spacing:0;font-size:14px;cursor:pointer;">
+          <input type="checkbox" id="r-clergy" style="width:auto;"/>
+          I am Clergy
+        </label>
+        <div style="font-size:11px;color:var(--muted);margin-top:2px;">Tick this box if you are a member of the Clergy.</div>
+      </div>
     </div>
 
     <div class="card">
@@ -371,7 +378,8 @@ async function submitRegistration(){
     email:email, phone:phone, accommodationOption:selectedOpt,
     expectedMonthlyTotal:o.total, expectedAccom:o.accom, expectedReg:o.reg,
     paymentRef:ref, registrationDate:new Date().toISOString().split('T')[0],
-    cohort:'new'   // all public (new) registrations use the 8-month / 3-month schedule
+    cohort:'new',   // all public (new) registrations use the 8-month / 3-month schedule
+    isClergy: document.getElementById('r-clergy').checked === true
   };
 
   // Build member with ledger for the correct schedule (3 months reg-only, else 8 months)

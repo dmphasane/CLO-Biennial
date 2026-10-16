@@ -169,13 +169,13 @@ app.post('/api/members', authRequired, async (req, res)=>{
   const m = req.body;
   await query(
     `INSERT INTO members (id,full_name,conference_code,local_church,email,phone,accommodation_option,
-       expected_monthly_total,expected_accom,expected_reg,payment_ref,registration_date,ledger,cohort,last_statement_sent_at,district,last_statement_channel)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
+       expected_monthly_total,expected_accom,expected_reg,payment_ref,registration_date,ledger,cohort,last_statement_sent_at,district,last_statement_channel,is_clergy)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
      ON CONFLICT (id) DO UPDATE SET full_name=$2,conference_code=$3,local_church=$4,email=$5,phone=$6,
        accommodation_option=$7,expected_monthly_total=$8,expected_accom=$9,expected_reg=$10,payment_ref=$11,
-       ledger=$13,cohort=$14,last_statement_sent_at=$15,district=$16,last_statement_channel=$17,updated_at=now()`,
+       ledger=$13,cohort=$14,last_statement_sent_at=$15,district=$16,last_statement_channel=$17,is_clergy=$18,updated_at=now()`,
     [m.id, m.fullName, m.conferenceCode, m.localChurch, m.email, m.phone, m.accommodationOption,
-     m.expectedMonthlyTotal, m.expectedAccom, m.expectedReg, m.paymentRef, m.registrationDate, JSON.stringify(m.ledger||{}), m.cohort||'legacy', m.lastStatementSentAt||null, m.district||null, m.lastStatementChannel||null]
+     m.expectedMonthlyTotal, m.expectedAccom, m.expectedReg, m.paymentRef, m.registrationDate, JSON.stringify(m.ledger||{}), m.cohort||'legacy', m.lastStatementSentAt||null, m.district||null, m.lastStatementChannel||null, m.isClergy===true]
   );
   await logAudit(req.user, 'MemberSave', m.paymentRef);
   res.json({ ok:true });
@@ -288,10 +288,10 @@ app.post('/api/register', regLimiter, async (req, res)=>{
     if(dup.rows.length) return res.status(409).json({ error:'A registration with this reference already exists.' });
     await query(
       `INSERT INTO members (id,full_name,conference_code,local_church,email,phone,accommodation_option,
-         expected_monthly_total,expected_accom,expected_reg,payment_ref,registration_date,ledger,cohort,district)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
+         expected_monthly_total,expected_accom,expected_reg,payment_ref,registration_date,ledger,cohort,district,is_clergy)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
       [m.id, m.fullName, m.conferenceCode, m.localChurch, m.email, m.phone, m.accommodationOption,
-       m.expectedMonthlyTotal, m.expectedAccom, m.expectedReg, m.paymentRef, m.registrationDate, JSON.stringify(m.ledger||{}), m.cohort||'new', m.district||null]
+       m.expectedMonthlyTotal, m.expectedAccom, m.expectedReg, m.paymentRef, m.registrationDate, JSON.stringify(m.ledger||{}), m.cohort||'new', m.district||null, m.isClergy===true]
     );
     // Respond to the registrant IMMEDIATELY once the member row is saved. All
     // non-essential writes (station list, audit, email) happen AFTER the response
@@ -494,6 +494,7 @@ function rowToMember(r){
     expectedMonthlyTotal:Number(r.expected_monthly_total), expectedAccom:Number(r.expected_accom),
     expectedReg:Number(r.expected_reg), paymentRef:r.payment_ref, registrationDate:r.registration_date,
     cohort:r.cohort||'legacy', lastStatementSentAt:r.last_statement_sent_at||null, lastStatementChannel:r.last_statement_channel||null, district:r.district||'',
+    isClergy:r.is_clergy===true,
     roomNumber:r.room_number, hotelRoom:r.hotel_room, roomPartner:r.room_partner, ledger:r.ledger||{} };
 }
 function rowToEntry(r){
