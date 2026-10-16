@@ -6,7 +6,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<title>NEDLO Biennial 2027 – Stokvel Fund Reconciliation Tool v4.2-build24</title>
+<title>NEDLO Biennial 2027 – Stokvel Fund Reconciliation Tool v4.2-build25</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -137,7 +137,7 @@ select[multiple]{height:auto;min-height:80px;}
       </select>
     </div>
     <button class="btn btn-primary" style="width:100%;justify-content:center;padding:12px;" onclick="doLogin()">Sign In</button>
-    <p style="text-align:center;margin-top:14px;font-size:11px;color:var(--muted);">Protected under POPIA. Authorised personnel only. <strong>v4.2-build24</strong></p>
+    <p style="text-align:center;margin-top:14px;font-size:11px;color:var(--muted);">Protected under POPIA. Authorised personnel only. <strong>v4.2-build25</strong></p>
     <p style="text-align:center;margin-top:6px;font-size:11px;"><a href="/help" style="color:var(--primary);font-weight:600;text-decoration:none;">❓ Need help? Read the guide</a></p>
   </div>
 </div>
@@ -579,10 +579,11 @@ select[multiple]{height:auto;min-height:80px;}
           <input id="m-phone" placeholder="082 000 0000"/></div>
       </div>
     </div>
-    <div class="form-group">
-      <label style="display:flex;align-items:center;gap:8px;text-transform:none;letter-spacing:0;font-size:13px;cursor:pointer;">
-        <input type="checkbox" id="m-clergy" style="width:auto;"/> Clergy
-      </label>
+    <div class="form-group"><label>Clergy?</label>
+      <select id="m-clergy">
+        <option value="no">No</option>
+        <option value="yes">Yes</option>
+      </select>
     </div>
     <div class="form-group"><label>Payment Reference (auto-generated)</label>
       <input id="m-ref" readonly style="background:#f9fafb;color:var(--muted);"/></div>
@@ -1286,7 +1287,7 @@ function openMemberModal(memberId){
     document.getElementById('m-option').value=m.accommodationOption;
     document.getElementById('m-email').value=m.email||'';
     document.getElementById('m-phone').value=m.phone||'';
-    document.getElementById('m-clergy').checked = m.isClergy===true;
+    document.getElementById('m-clergy').value = m.isClergy===true ? 'yes' : 'no';
   } else {
     document.getElementById('member-modal-title').textContent='Add Member';
     document.getElementById('m-fullname').value='';
@@ -1295,7 +1296,7 @@ function openMemberModal(memberId){
     document.getElementById('m-option').value='OPT-2';
     document.getElementById('m-email').value='';
     document.getElementById('m-phone').value='';
-    document.getElementById('m-clergy').checked = false;
+    document.getElementById('m-clergy').value = 'no';
   }
   updateExpected();
   modal.style.display='flex';
@@ -1346,7 +1347,7 @@ function saveMember(){
     DB.members[idx] = { ...old, fullName, conferenceCode:conf, localChurch:church,
       accommodationOption:opt, email, phone,
       expectedMonthlyTotal:o.total, expectedAccom:o.accom, expectedReg:o.reg,
-      paymentRef:ref, isClergy: document.getElementById('m-clergy').checked === true,
+      paymentRef:ref, isClergy: document.getElementById('m-clergy').value === 'yes',
       cohort: old.cohort || (isNewOption ? 'new' : 'legacy') };
     auditLog('MemberEdit', 'Edited member '+ref);
   } else {
@@ -1355,7 +1356,7 @@ function saveMember(){
       accommodationOption:opt, email, phone,
       expectedMonthlyTotal:o.total, expectedAccom:o.accom, expectedReg:o.reg,
       paymentRef:ref, registrationDate: today(),
-      isClergy: document.getElementById('m-clergy').checked === true,
+      isClergy: document.getElementById('m-clergy').value === 'yes',
       cohort: isNewOption ? 'new' : 'new', // members added now default to 'new' cohort
       ledger: {}
     };

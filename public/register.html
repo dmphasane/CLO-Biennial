@@ -93,12 +93,13 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--muted);}
         <div class="col-half"><div class="form-group"><label>Contact Number *</label>
           <input id="r-phone" type="tel" placeholder="082 000 0000"/></div></div>
       </div>
-      <div class="form-group" style="margin-top:4px;">
-        <label style="display:flex;align-items:center;gap:8px;text-transform:none;letter-spacing:0;font-size:14px;cursor:pointer;">
-          <input type="checkbox" id="r-clergy" style="width:auto;"/>
-          I am Clergy
-        </label>
-        <div style="font-size:11px;color:var(--muted);margin-top:2px;">Tick this box if you are a member of the Clergy.</div>
+      <div class="form-group">
+        <label>Are you Clergy? *</label>
+        <select id="r-clergy">
+          <option value="no">No</option>
+          <option value="yes">Yes</option>
+        </select>
+        <div style="font-size:11px;color:var(--muted);margin-top:2px;">Select “Yes” if you are a member of the Clergy.</div>
       </div>
     </div>
 
@@ -379,7 +380,7 @@ async function submitRegistration(){
     expectedMonthlyTotal:o.total, expectedAccom:o.accom, expectedReg:o.reg,
     paymentRef:ref, registrationDate:new Date().toISOString().split('T')[0],
     cohort:'new',   // all public (new) registrations use the 8-month / 3-month schedule
-    isClergy: document.getElementById('r-clergy').checked === true
+    isClergy: document.getElementById('r-clergy').value === 'yes'
   };
 
   // Build member with ledger for the correct schedule (3 months reg-only, else 8 months)

@@ -74,11 +74,12 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--muted);}
         <div class="col-half"><div class="form-group"><label>Email *</label><input id="r-email" type="email" placeholder="your@email.com"/></div></div>
         <div class="col-half"><div class="form-group"><label>Phone *</label><input id="r-phone" type="tel" placeholder="082 000 0000"/></div></div>
       </div>
-      <div class="form-group" style="margin-top:4px;">
-        <label style="display:flex;align-items:center;gap:8px;text-transform:none;letter-spacing:0;font-size:14px;cursor:pointer;">
-          <input type="checkbox" id="r-clergy" style="width:auto;"/>
-          I am Clergy
-        </label>
+      <div class="form-group">
+        <label>Are you Clergy? *</label>
+        <select id="r-clergy">
+          <option value="no">No</option>
+          <option value="yes">Yes</option>
+        </select>
       </div>
     </div>
     <div class="card">
@@ -225,7 +226,7 @@ async function submitReg(){
     fullName:n, conferenceCode:c, localChurch:ch, district:district, email:e, phone:p,
     accommodationOption:sel, expectedMonthlyTotal:o.total, expectedAccom:o.accom, expectedReg:o.reg,
     paymentRef:ref, registrationDate:new Date().toISOString().split('T')[0], cohort:'new',
-    isClergy: document.getElementById('r-clergy').checked === true
+    isClergy: document.getElementById('r-clergy').value === 'yes'
   };
   const MONTHS=o.regOnly?SCHED_REGONLY:SCHED_NEW;
   member.id='ID-'+Math.random().toString(36).substr(2,9).toUpperCase();
