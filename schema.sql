@@ -42,6 +42,16 @@ ALTER TABLE members ADD COLUMN IF NOT EXISTS is_clergy BOOLEAN DEFAULT false;
 CREATE INDEX IF NOT EXISTS idx_members_ref ON members(payment_ref);
 CREATE INDEX IF NOT EXISTS idx_members_conf ON members(conference_code);
 
+-- Members an administrator has deleted. Checked on every member save so a deleted member
+-- cannot be re-created by a browser session that still holds an old copy of the list.
+CREATE TABLE IF NOT EXISTS deleted_members (
+  id TEXT PRIMARY KEY,
+  payment_ref TEXT,
+  full_name TEXT,
+  deleted_by TEXT,
+  deleted_at TIMESTAMPTZ DEFAULT now()
+);
+
 CREATE TABLE IF NOT EXISTS entries (
   id TEXT PRIMARY KEY,
   txn_date TEXT,

@@ -84,6 +84,7 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--muted);}
     </div>
     <div class="card">
       <div class="card-title">Accommodation Option</div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:8px;">All hotel accommodation options are for <strong>5 days / 4 nights</strong>.</div>
       <div id="options-list"></div>
     </div>
     <div id="summary-section" class="hidden">
@@ -92,6 +93,7 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--muted);}
         <div class="summary-box"><table>
           <tr><td>Option</td><td class="val" id="s-option"></td></tr>
           <tr><td>Hotel</td><td class="val" id="s-hotel"></td></tr>
+          <tr id="s-nights-row"><td>Booking</td><td class="val">5 days / 4 nights</td></tr>
           <tr><td>Monthly Payment</td><td class="val" id="s-total"></td></tr>
           <tr><td>Total Commitment</td><td class="val" id="s-total12"></td></tr>
           <tr><td>Your Reference</td><td class="val" style="color:var(--primary);font-size:15px;" id="s-ref"></td></tr>
@@ -192,6 +194,7 @@ function rCard(k,o){
     <div class="hotel">${rIcon(o)} ${o.hotel}</div><div class="type">${o.type}</div><div class="price">${fmt(o.total)}/mo</div>
     <div style="font-size:11.5px;color:var(--primary);font-weight:600;margin-top:6px;padding-top:6px;border-top:1px dashed #e5e7eb;">💰 Total: ${fmt(totalCommit)}${split}</div>
     <div style="font-size:11px;color:var(--muted);margin-top:2px;">📅 ${dur}</div>
+    ${o.regOnly?'':`<div style="font-size:11px;color:var(--primary);font-weight:600;margin-top:2px;">🛏 Booking: 5 days / 4 nights</div>`}
   </div>`;
 }
 // Registration Only stays pinned at the top; all accommodation options follow,
@@ -204,7 +207,7 @@ const sortedKeys=Object.keys(OPTIONS).sort((a,b)=>{
 let rHtml='';
 sortedKeys.forEach(k=>{rHtml+=rCard(k,OPTIONS[k]);});
 list.innerHTML=rHtml;
-function pick(k){sel=k;document.querySelectorAll('.option-card').forEach(c=>c.classList.remove('selected'));document.getElementById('o-'+k).classList.add('selected');const o=OPTIONS[k];document.getElementById('summary-section').classList.remove('hidden');document.getElementById('s-option').textContent=k;document.getElementById('s-hotel').textContent=o.hotel+' – '+o.type;document.getElementById('s-total').textContent=fmt(o.total);document.getElementById('s-total12').textContent=fmt(o.total*o.months)+' ('+o.months+' mo)';const n=document.getElementById('r-name').value.trim(),c=document.getElementById('r-conf').value;document.getElementById('s-ref').textContent=(c&&n)?(c+'-'+n).toUpperCase():'[Enter name & conference above]';}
+function pick(k){sel=k;document.querySelectorAll('.option-card').forEach(c=>c.classList.remove('selected'));document.getElementById('o-'+k).classList.add('selected');const o=OPTIONS[k];document.getElementById('summary-section').classList.remove('hidden');document.getElementById('s-option').textContent=k;document.getElementById('s-hotel').textContent=o.hotel+' – '+o.type;document.getElementById('s-nights-row').style.display=o.regOnly?'none':'';document.getElementById('s-total').textContent=fmt(o.total);document.getElementById('s-total12').textContent=fmt(o.total*o.months)+' ('+o.months+' mo)';const n=document.getElementById('r-name').value.trim(),c=document.getElementById('r-conf').value;document.getElementById('s-ref').textContent=(c&&n)?(c+'-'+n).toUpperCase():'[Enter name & conference above]';}
 ['r-name','r-conf'].forEach(id=>document.getElementById(id).addEventListener('input',()=>{if(sel)pick(sel);}));
 const SCHED_NEW=['2026-10','2026-11','2026-12','2027-01','2027-02','2027-03','2027-04','2027-05'];
 const SCHED_REGONLY=['2026-10','2026-11','2026-12'];
@@ -244,7 +247,7 @@ async function submitReg(){
   }
   document.getElementById('reg-form').classList.add('hidden');
   document.getElementById('reg-success').classList.remove('hidden');
-  document.getElementById('success-details').innerHTML=`<div class="bank-box"><table><tr><td class="lbl">Option</td><td>${sel} – ${o.hotel} (${o.type})</td></tr><tr><td class="lbl">Monthly</td><td>${fmt(o.total)} × ${o.months} mo</td></tr><tr><td class="lbl">Total Commitment</td><td style="font-weight:700;">${fmt(r2(o.total*o.months))}</td></tr><tr><td class="lbl">Your Reference</td><td style="font-weight:800;color:var(--primary);font-size:16px;">${ref}</td></tr><tr><td class="lbl">Account</td><td>63211345582 (FNB)</td></tr><tr><td class="lbl">Branch</td><td>250655</td></tr></table></div>`;
+  document.getElementById('success-details').innerHTML=`<div class="bank-box"><table><tr><td class="lbl">Option</td><td>${sel} – ${o.hotel} (${o.type})</td></tr>${o.regOnly?'':'<tr><td class="lbl">Booking</td><td>5 days / 4 nights</td></tr>'}<tr><td class="lbl">Monthly</td><td>${fmt(o.total)} × ${o.months} mo</td></tr><tr><td class="lbl">Total Commitment</td><td style="font-weight:700;">${fmt(r2(o.total*o.months))}</td></tr><tr><td class="lbl">Your Reference</td><td style="font-weight:800;color:var(--primary);font-size:16px;">${ref}</td></tr><tr><td class="lbl">Account</td><td>63211345582 (FNB)</td></tr><tr><td class="lbl">Branch</td><td>250655</td></tr></table></div>`;
 }
 </script>
 </body>

@@ -99,6 +99,10 @@ const OPTIONS = {
   'OPT-6N':{hotel:'Garden Court',type:'Sharing',total:r2((4170+REG_TOTAL)/8),accom:r2(4170/8),reg:r2(REG_TOTAL/8),scheduleKey:'new'},
 };
 function fmt(n){ return 'R'+Number(n).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g,','); }
+// Hotel bookings are for 5 days / 4 nights. Shown only for options that include a hotel
+// (not Registration Only, and not once-off/flexible members with no hotel).
+const STAY_LABEL = '5 days / 4 nights';
+function hasHotelStay(opt){ return !!(opt && opt.hotel && opt.hotel!=='N/A' && opt.scheduleKey!=='regonly'); }
 function memberSchedule(m){
   const opt = OPTIONS[m.accommodationOption];
   if(opt && opt.scheduleKey==='regonly') return SCHEDULES.regonly;
@@ -204,6 +208,7 @@ export function buildStatementHTML(m, entries, settings={}){
     <div style="font-weight:700;color:#1a3a6b;margin:14px 0 6px;">SELECTED OPTION</div>
     <table style="width:100%;font-size:13px;">
       <tr><td style="color:#6b7280;width:220px;">Option</td><td><strong>${m.accommodationOption}${opt.hotel&&opt.hotel!=='N/A'?' '+DASH+' '+opt.hotel+' ('+opt.type+')':' '+DASH+' Once Off / Flexible'}</strong></td></tr>
+      ${hasHotelStay(opt) ? `<tr><td style="color:#6b7280;">Booking</td><td><strong>${STAY_LABEL}</strong></td></tr>` : ''}
       <tr><td style="color:#6b7280;">Biennial Registration</td><td>${isFlex?'Flexible':fmt(m.expectedReg)+'/mo ('+fmt(totalReg12)+' total)'}</td></tr>
       <tr><td style="color:#6b7280;">Accommodation</td><td>${isFlex?'Flexible':fmt(m.expectedAccom)+'/mo ('+fmt(totalAccom12)+' total)'}</td></tr>
       <tr><td style="color:#1a3a6b;font-weight:700;">Total (${nMo} months)</td><td style="font-weight:700;">${isFlex?'Flexible':fmt(totalExp12)}</td></tr>
@@ -278,6 +283,7 @@ export function buildRegistrationConfirmationHTML(m){
     <div style="font-weight:700;color:#1a3a6b;margin:16px 0 6px;">SELECTED OPTION &amp; COST BREAKDOWN</div>
     <table style="width:100%;font-size:13px;">
       <tr><td style="color:#6b7280;width:200px;">Option</td><td><strong>${m.accommodationOption} ${DASH} ${opt.hotel||''}${opt.type?' ('+opt.type+')':''}</strong></td></tr>
+      ${hasHotelStay(opt) ? `<tr><td style="color:#6b7280;">Booking</td><td><strong>${STAY_LABEL}</strong></td></tr>` : ''}
       ${isRegOnly ? '' : `<tr><td style="color:#6b7280;">Accommodation</td><td>${fmt(accomM)}/mo &nbsp;&times;&nbsp; ${nMo} = <strong>${fmt(accomTotal)}</strong></td></tr>`}
       <tr><td style="color:#6b7280;">Biennial Registration</td><td>${fmt(regM)}/mo &nbsp;&times;&nbsp; ${nMo} = <strong>${fmt(regTotal)}</strong></td></tr>
       <tr style="border-top:1px solid #e5e7eb;"><td style="color:#1a3a6b;font-weight:700;padding-top:6px;">Monthly Instalment</td><td style="font-weight:700;color:#1a3a6b;padding-top:6px;">${fmt(monthly)} per month</td></tr>

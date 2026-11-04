@@ -6,7 +6,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<title>NEDLO Biennial 2027 – Stokvel Fund Reconciliation Tool v4.6-build29</title>
+<title>NEDLO Biennial 2027 – Stokvel Fund Reconciliation Tool v4.7-build30</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -137,7 +137,7 @@ select[multiple]{height:auto;min-height:80px;}
       </select>
     </div>
     <button class="btn btn-primary" style="width:100%;justify-content:center;padding:12px;" onclick="doLogin()">Sign In</button>
-    <p style="text-align:center;margin-top:14px;font-size:11px;color:var(--muted);">Protected under POPIA. Authorised personnel only. <strong>v4.6-build29</strong></p>
+    <p style="text-align:center;margin-top:14px;font-size:11px;color:var(--muted);">Protected under POPIA. Authorised personnel only. <strong>v4.7-build30</strong></p>
     <p style="text-align:center;margin-top:6px;font-size:11px;"><a href="/help" style="color:var(--primary);font-weight:600;text-decoration:none;">❓ Need help? Read the guide</a></p>
   </div>
 </div>
@@ -997,6 +997,10 @@ function memberPaid(memberId){
   return dedupeEntries(DB.entries.filter(e=>e.linkedMemberId===memberId && e.matchStatus==='MATCHED'))
     .reduce((s,e)=>s+Number(e.creditAmount),0);
 }
+// Hotel bookings are for 5 days / 4 nights. Shown on member comms only for options that
+// include a hotel (not Registration Only, and not once-off/flexible members).
+const STAY_LABEL = '5 days / 4 nights';
+function hasHotelStay(opt){ return !!(opt && opt.hotel && opt.hotel!=='N/A' && opt.scheduleKey!=='regonly'); }
 // Credit (overpayment): matched payments in excess of the member's full commitment.
 // Returns 0 for flex/once-off members and for anyone who has not overpaid.
 function memberCredit(m){
@@ -1795,7 +1799,7 @@ function previewMerge(){
     </div>`;
 }
 
-function executeMerge(){
+async function executeMerge(){
   const targetId = document.getElementById('merge-target-sel').value;
   const errEl = document.getElementById('merge-error');
   if(!targetId){ errEl.textContent='Select a duplicate member.'; errEl.style.display='block'; return; }
@@ -1858,16 +1862,38 @@ function executeMerge(){
   saveDB();
   document.getElementById('merge-modal').style.display='none';
   renderMembersTable(); renderDashboard();
-  alert(`Merge complete. "${target.fullName}" merged into "${primary.fullName}".`);
+
+  // Save the transferred payments first, THEN delete the duplicate on the server, so a
+  // failure part-way can only leave a harmless duplicate member (never orphaned payments).
+  let serverNote = '';
+  if(typeof apiPushAll === 'function' && AUTH_TOKEN){
+    clearTimeout(_apiSaveTimer);
+    try{ await apiPushAll(DB); }catch(e){ /* reported by the sync warning */ }
+  }
+  const del = await deleteMemberOnServer(target.id);
+  if(!del.ok) serverNote = `\n\n⚠ The duplicate could not be removed on the server (${del.error}) and may reappear after a reload. Please run the merge again.`;
+  alert(`Merge complete. "${target.fullName}" merged into "${primary.fullName}".${serverNote}`);
 }
 
-function deleteMember(id){
+// Remove a member on the server (which also records the deletion there, so a stale browser
+// session cannot bring the member back). Without this the member was only removed from the
+// browser's copy and re-appeared from the database on the next reload.
+async function deleteMemberOnServer(id){
+  if(typeof apiDeleteMember !== 'function' || !AUTH_TOKEN) return { ok:true };
+  try{ await apiDeleteMember(id); return { ok:true }; }
+  catch(e){ return { ok:false, error:e.message }; }
+}
+async function deleteMember(id){
   // UNW-006
   const m = DB.members.find(x=>x.id===id);
   if(!m) return;
   const hasMatched = DB.entries.some(e=>e.linkedMemberId===id && e.matchStatus==='MATCHED');
   if(hasMatched){ alert('Cannot delete: this member has matched payment records in the current savings period. Resolve or remove the associated entries first.'); return; }
   if(!confirm('Delete member '+m.fullName+'? This cannot be undone.')) return;
+  // Delete on the server FIRST. If that fails, keep the member so the screen never shows
+  // a member as deleted when the database still has them.
+  const res = await deleteMemberOnServer(id);
+  if(!res.ok){ alert('Could not delete '+m.fullName+' on the server ('+res.error+'). The member has NOT been deleted. Please try again.'); return; }
   DB.members = DB.members.filter(x=>x.id!==id);
   auditLog('MemberDelete','Deleted member '+m.paymentRef);
   saveDB(); renderMembersTable(); renderDashboard();
@@ -4776,6 +4802,7 @@ function buildWhatsappText(m){
   lines.push('');
   lines.push('Here is the status of your contributions:');
   lines.push('• Option: '+m.accommodationOption+(opt.hotel&&opt.hotel!=='N/A'?' – '+opt.hotel+' ('+opt.type+')':''));
+  if(hasHotelStay(opt)) lines.push('• Booking: '+STAY_LABEL);
   if(!isFlex){
     lines.push('• Monthly instalment: '+fmt(m.expectedMonthlyTotal));
     lines.push('• Total commitment ('+nMo+' months): '+fmt(totalExp));
@@ -4999,6 +5026,7 @@ function generateLetterHTML(memberId, forEmail=false){
       <table style="width:100%;font-size:12.5px;">
         <tr><td style="color:#6b7280;padding:2px 0;width:230px;">Accommodation Option</td><td><strong>${optLabel}</strong></td></tr>
         <tr><td style="color:#6b7280;padding:2px 0;">Hotel / Room Type</td><td>${opt.hotel&&opt.hotel!=='N/A'?opt.hotel+' – '+opt.type:'Once Off / Flexible'}</td></tr>
+        ${hasHotelStay(opt)?`<tr><td style="color:#6b7280;padding:2px 0;">Booking</td><td><strong>${STAY_LABEL}</strong></td></tr>`:''}
         <tr><td style="color:#6b7280;padding:2px 0;">Biennial Registration Component</td><td><strong>${isFlexAmount?'Flexible':fmt(m.expectedReg)+' per month (R'+fmt(totalReg12).replace('R','')+' total)'}</strong></td></tr>
         <tr><td style="color:#6b7280;padding:2px 0;">Accommodation Component</td><td><strong>${isFlexAmount?'Flexible':fmt(m.expectedAccom)+' per month (R'+fmt(totalAccom12).replace('R','')+' total)'}</strong></td></tr>
         <tr style="border-top:1px solid #bfdbfe;"><td style="color:#1a3a6b;font-weight:700;padding:4px 0;">Monthly Instalment (Total)</td><td style="font-weight:700;color:#1a3a6b;">${isFlexAmount?'Flexible':fmt(m.expectedMonthlyTotal)+' per month over '+nMo+' months'}</td></tr>
@@ -5184,6 +5212,7 @@ function buildPlainTextStatement(m){
   lines.push('');
   lines.push('1. SELECTED OPTION');
   lines.push('   Option: '+m.accommodationOption+(opt.hotel&&opt.hotel!=='N/A'?' - '+opt.hotel+' ('+opt.type+')':' - Once Off / Flexible'));
+  if(hasHotelStay(opt)) lines.push('   Booking: '+STAY_LABEL);
   lines.push('   Biennial Registration: '+(isFlexAmount?'Flexible':fmt(m.expectedReg)+'/mo ('+fmt(totalReg12)+' total)'));
   lines.push('   Accommodation: '+(isFlexAmount?'Flexible':fmt(m.expectedAccom)+'/mo ('+fmt(totalAccom12)+' total)'));
   lines.push('   Monthly Instalment: '+(isFlexAmount?'Flexible':fmt(m.expectedMonthlyTotal)));

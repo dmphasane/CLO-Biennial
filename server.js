@@ -171,6 +171,11 @@ app.post('/api/members', authRequired, async (req, res)=>{
   // database error leaves the request unanswered (hung), which blocked the browser's
   // sequential save loop and stopped later members (e.g. WCLO) from ever saving.
   try{
+  // A member an administrator has deleted must STAY deleted. The browser pushes its whole
+  // member list on every save, so a second tab / device still holding an old list would
+  // otherwise quietly re-create the deleted member. Skip any id that has been deleted.
+  const tomb = await query('SELECT 1 FROM deleted_members WHERE id=$1', [m.id]);
+  if(tomb.rows.length) return res.json({ ok:true, skipped:'deleted' });
   await query(
     `INSERT INTO members (id,full_name,conference_code,local_church,email,phone,accommodation_option,
        expected_monthly_total,expected_accom,expected_reg,payment_ref,registration_date,ledger,cohort,last_statement_sent_at,district,last_statement_channel,is_clergy)
@@ -190,6 +195,13 @@ app.post('/api/members', authRequired, async (req, res)=>{
 });
 app.delete('/api/members/:id', authRequired, async (req, res)=>{
   try{
+    // Record the deletion first (keeps the name/ref for the audit trail), then delete.
+    await query(
+      `INSERT INTO deleted_members (id, payment_ref, full_name, deleted_by)
+       VALUES ($1, (SELECT payment_ref FROM members WHERE id=$1), (SELECT full_name FROM members WHERE id=$1), $2)
+       ON CONFLICT (id) DO NOTHING`,
+      [req.params.id, (req.user && req.user.name) || '']
+    );
     await query('DELETE FROM members WHERE id=$1', [req.params.id]);
     await logAudit(req.user, 'MemberDelete', req.params.id);
     res.json({ ok:true });

@@ -105,7 +105,7 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--muted);}
 
     <div class="card">
       <div class="card-title">Select Accommodation Option</div>
-      <div class="alert alert-info">All options include Biennial Registration (R5,700) + Accommodation, spread over <strong>8 months</strong> (Oct 2026 – May 2027). Registration Only is spread over 3 months (Oct – Dec 2026). New registrations use the 8-month schedule regardless of hotel.</div>
+      <div class="alert alert-info">All options include Biennial Registration (R5,700) + Accommodation, spread over <strong>8 months</strong> (Oct 2026 – May 2027). Registration Only is spread over 3 months (Oct – Dec 2026). New registrations use the 8-month schedule regardless of hotel. All hotel accommodation options are for <strong>5 days / 4 nights</strong>.</div>
       <div id="options-list"></div>
     </div>
 
@@ -116,6 +116,7 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--muted);}
           <table>
             <tr><td>Selected Option</td><td class="val" id="s-option"></td></tr>
             <tr><td>Hotel & Room Type</td><td class="val" id="s-hotel"></td></tr>
+            <tr id="s-nights-row"><td>Booking</td><td class="val">5 days / 4 nights</td></tr>
             <tr><td>Biennial Registration (monthly)</td><td class="val" id="s-reg"></td></tr>
             <tr><td>Accommodation (monthly)</td><td class="val" id="s-accom"></td></tr>
             <tr><td style="font-weight:700;">Monthly Instalment</td><td class="val" style="font-size:16px;color:var(--primary);" id="s-total"></td></tr>
@@ -292,6 +293,7 @@ function optCard(key,o){
       ${o.regOnly?'':`<span style="color:var(--muted);font-weight:400;"> (Accommodation ${fmt(r2(o.accom*o.months))} + Registration ${fmt(REG_TOTAL)})</span>`}
     </div>
     <div style="font-size:11px;color:var(--muted);margin-top:2px;">📅 ${durationNote}</div>
+    ${o.regOnly?'':`<div style="font-size:11px;color:var(--primary);font-weight:600;margin-top:2px;">🛏 Booking: 5 days / 4 nights</div>`}
   </div>`;
 }
 const list = document.getElementById('options-list');
@@ -315,6 +317,8 @@ function selectOption(key){
   sec.classList.remove('hidden');
   document.getElementById('s-option').textContent=key;
   document.getElementById('s-hotel').textContent=`${o.hotel} – ${o.type}`;
+  // The 5 days / 4 nights booking line only applies to hotel options (not Registration Only)
+  document.getElementById('s-nights-row').style.display = o.regOnly ? 'none' : '';
   document.getElementById('s-reg').textContent=fmt(o.reg);
   document.getElementById('s-accom').textContent=fmt(o.accom);
   document.getElementById('s-total').textContent=fmt(o.total);
@@ -421,6 +425,7 @@ async function submitRegistration(){
         <tr><td>Name</td><td class="val">${name}</td></tr>
         <tr><td>Conference</td><td class="val">${conf}</td></tr>
         <tr><td>Option</td><td class="val">${selectedOpt} – ${o.hotel+' ('+o.type+')'}</td></tr>
+        ${o.regOnly?'':'<tr><td>Booking</td><td class="val">5 days / 4 nights</td></tr>'}
         <tr><td>Monthly Payment</td><td class="val">${fmt(o.total)}</td></tr>
         <tr><td>Total Commitment</td><td class="val" style="font-weight:700;">${fmt(r2(o.total*o.months))} (${o.months} months)</td></tr>
         <tr><td>Payment Reference</td><td class="val" style="color:var(--primary);font-size:15px;">${ref}</td></tr>

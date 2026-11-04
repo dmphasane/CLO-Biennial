@@ -118,10 +118,13 @@ async function apiPushAll(DB){
   // Save members one by one. A failure on one record must NOT stop the remaining
   // records from saving, and must be reported rather than swallowed.
   const failures = [];
+  const deletedElsewhere = new Set();
   let saved = 0, consecutive = 0;
   for(const m of DB.members){
     try{
-      await apiSaveMember(m);
+      const r = await apiSaveMember(m);
+      // The server refuses to re-create a member an administrator has deleted.
+      if(r && r.skipped === 'deleted'){ deletedElsewhere.add(m.id); continue; }
       saved++; consecutive = 0;
     }catch(e){
       console.error('Member save failed:', m.paymentRef, e.message);
@@ -141,6 +144,15 @@ async function apiPushAll(DB){
   }catch(e){
     console.error('Push failed:', e.message);
     failures.push({ name:'(payments/aliases/uploads)', error:e.message });
+  }
+  // Drop members that were deleted from another session so this browser stops showing them.
+  if(deletedElsewhere.size){
+    for(let i = DB.members.length - 1; i >= 0; i--){
+      if(deletedElsewhere.has(DB.members[i].id)) DB.members.splice(i, 1);
+    }
+    try{ localStorage.setItem('nedlo_db', JSON.stringify(DB)); }catch(e){}
+    if(typeof renderMembersTable === 'function') renderMembersTable();
+    if(typeof renderDashboard === 'function') renderDashboard();
   }
   reportSyncResult(failures);
   return { saved, total: DB.members.length, failures };
