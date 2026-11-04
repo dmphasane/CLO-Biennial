@@ -167,6 +167,10 @@ app.get('/api/members', authRequired, async (req, res)=>{
 });
 app.post('/api/members', authRequired, async (req, res)=>{
   const m = req.body;
+  // Express 4 does not catch errors thrown in async handlers: without this try/catch a
+  // database error leaves the request unanswered (hung), which blocked the browser's
+  // sequential save loop and stopped later members (e.g. WCLO) from ever saving.
+  try{
   await query(
     `INSERT INTO members (id,full_name,conference_code,local_church,email,phone,accommodation_option,
        expected_monthly_total,expected_accom,expected_reg,payment_ref,registration_date,ledger,cohort,last_statement_sent_at,district,last_statement_channel,is_clergy)
@@ -179,11 +183,20 @@ app.post('/api/members', authRequired, async (req, res)=>{
   );
   await logAudit(req.user, 'MemberSave', m.paymentRef);
   res.json({ ok:true });
+  }catch(e){
+    console.error('MEMBER SAVE ERROR for', m && m.paymentRef, ':', e.message);
+    if(!res.headersSent) res.status(500).json({ error:'Member save failed ('+(m && m.paymentRef)+'): '+e.message });
+  }
 });
 app.delete('/api/members/:id', authRequired, async (req, res)=>{
-  await query('DELETE FROM members WHERE id=$1', [req.params.id]);
-  await logAudit(req.user, 'MemberDelete', req.params.id);
-  res.json({ ok:true });
+  try{
+    await query('DELETE FROM members WHERE id=$1', [req.params.id]);
+    await logAudit(req.user, 'MemberDelete', req.params.id);
+    res.json({ ok:true });
+  }catch(e){
+    console.error('MEMBER DELETE ERROR:', e.message);
+    if(!res.headersSent) res.status(500).json({ error:e.message });
+  }
 });
 
 // ─── ENTRIES ───
@@ -242,13 +255,18 @@ app.get('/api/aliases', authRequired, async (req, res)=>{
   res.json(map);
 });
 app.post('/api/aliases', authRequired, async (req, res)=>{
-  const { refNorm, memberId, memberIds } = req.body;
-  await query(
-    `INSERT INTO ref_aliases (ref_norm, member_id, member_ids) VALUES ($1,$2,$3)
-     ON CONFLICT (ref_norm) DO UPDATE SET member_id=$2, member_ids=$3`,
-    [refNorm, memberId||null, memberIds?JSON.stringify(memberIds):null]
-  );
-  res.json({ ok:true });
+  try{
+    const { refNorm, memberId, memberIds } = req.body;
+    await query(
+      `INSERT INTO ref_aliases (ref_norm, member_id, member_ids) VALUES ($1,$2,$3)
+       ON CONFLICT (ref_norm) DO UPDATE SET member_id=$2, member_ids=$3`,
+      [refNorm, memberId||null, memberIds?JSON.stringify(memberIds):null]
+    );
+    res.json({ ok:true });
+  }catch(e){
+    console.error('ALIAS SAVE ERROR:', e.message);
+    if(!res.headersSent) res.status(500).json({ error:e.message });
+  }
 });
 
 // ─── UPLOAD HISTORY ───
@@ -257,16 +275,21 @@ app.get('/api/uploads', authRequired, async (req, res)=>{
   res.json(r.rows.map(rowToUpload));
 });
 app.post('/api/uploads', authRequired, async (req, res)=>{
-  const u = req.body;
-  await query(
-    `INSERT INTO uploads (id,filename,uploaded_at,uploaded_by,row_count,imported,duplicates_skipped,credits_added,from_date,to_date,statement_total_entered)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
-     ON CONFLICT (id) DO UPDATE SET filename=$2,uploaded_by=$4,row_count=$5,imported=$6,
-       duplicates_skipped=$7,credits_added=$8,from_date=$9,to_date=$10,statement_total_entered=$11`,
-    [u.id, u.filename, u.uploadedAt||new Date().toISOString(), u.uploadedBy, u.rowCount||0, u.imported||0,
-     u.duplicatesSkipped||0, u.creditsAdded||0, u.fromDate||null, u.toDate||null, u.statementTotalEntered||0]
-  );
-  res.json({ ok:true });
+  try{
+    const u = req.body;
+    await query(
+      `INSERT INTO uploads (id,filename,uploaded_at,uploaded_by,row_count,imported,duplicates_skipped,credits_added,from_date,to_date,statement_total_entered)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+       ON CONFLICT (id) DO UPDATE SET filename=$2,uploaded_by=$4,row_count=$5,imported=$6,
+         duplicates_skipped=$7,credits_added=$8,from_date=$9,to_date=$10,statement_total_entered=$11`,
+      [u.id, u.filename, u.uploadedAt||new Date().toISOString(), u.uploadedBy, u.rowCount||0, u.imported||0,
+       u.duplicatesSkipped||0, u.creditsAdded||0, u.fromDate||null, u.toDate||null, u.statementTotalEntered||0]
+    );
+    res.json({ ok:true });
+  }catch(e){
+    console.error('UPLOAD SAVE ERROR:', e.message);
+    if(!res.headersSent) res.status(500).json({ error:e.message });
+  }
 });
 app.delete('/api/uploads/:id', authRequired, async (req, res)=>{
   // Remove the batch's entries and the batch record

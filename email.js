@@ -85,10 +85,18 @@ const OPTIONS = {
   'OPT-5':{hotel:'Garden Court',type:'Not Sharing',total:1222.92,accom:747.92,reg:475},
   'OPT-6':{hotel:'Garden Court',type:'Sharing',total:909.38,accom:434.38,reg:475},
   'REG-ONLY':{hotel:'Registration Only',type:'No Accommodation',total:r2(REG_TOTAL/3),accom:0,reg:r2(REG_TOTAL/3),scheduleKey:'regonly'},
-  'CAP-S':{hotel:'The Capital',type:'Single B&B',total:r2((12250+REG_TOTAL)/8),accom:r2(12250/8),reg:r2(REG_TOTAL/8),scheduleKey:'new'},
-  'CAP-SH':{hotel:'The Capital',type:'Sharing B&B (per person)',total:r2((6900+REG_TOTAL)/8),accom:r2(6900/8),reg:r2(REG_TOTAL/8),scheduleKey:'new'},
-  'CAT-S':{hotel:'The Catalyst',type:'Single B&B',total:r2((7950+REG_TOTAL)/8),accom:r2(7950/8),reg:r2(REG_TOTAL/8),scheduleKey:'new'},
-  'CAT-SH':{hotel:'The Catalyst',type:'Sharing B&B (per person)',total:r2((4725+REG_TOTAL)/8),accom:r2(4725/8),reg:r2(REG_TOTAL/8),scheduleKey:'new'},
+  // 4-night accommodation totals (corrected from the original 5-night basis)
+  'CAP-S':{hotel:'The Capital',type:'Single B&B',total:r2((9800+REG_TOTAL)/8),accom:r2(9800/8),reg:r2(REG_TOTAL/8),scheduleKey:'new'},
+  'CAP-SH':{hotel:'The Capital',type:'Sharing B&B (per person)',total:r2((5520+REG_TOTAL)/8),accom:r2(5520/8),reg:r2(REG_TOTAL/8),scheduleKey:'new'},
+  'CAT-S':{hotel:'The Catalyst',type:'Single B&B',total:r2((6360+REG_TOTAL)/8),accom:r2(6360/8),reg:r2(REG_TOTAL/8),scheduleKey:'new'},
+  'CAT-SH':{hotel:'The Catalyst',type:'Sharing B&B (per person)',total:r2((3780+REG_TOTAL)/8),accom:r2(3780/8),reg:r2(REG_TOTAL/8),scheduleKey:'new'},
+  // New-cohort existing-hotel options (8 months, 4-night) - mirror of OPT-1N..6N in the portal
+  'OPT-1N':{hotel:'Sandton Sun',type:'Not Sharing',total:r2((15820+REG_TOTAL)/8),accom:r2(15820/8),reg:r2(REG_TOTAL/8),scheduleKey:'new'},
+  'OPT-2N':{hotel:'Sandton Sun',type:'Sharing',total:r2((8710+REG_TOTAL)/8),accom:r2(8710/8),reg:r2(REG_TOTAL/8),scheduleKey:'new'},
+  'OPT-3N':{hotel:'Sandton Towers',type:'Not Sharing',total:r2((17020+REG_TOTAL)/8),accom:r2(17020/8),reg:r2(REG_TOTAL/8),scheduleKey:'new'},
+  'OPT-4N':{hotel:'Sandton Towers',type:'Sharing',total:r2((8510+REG_TOTAL)/8),accom:r2(8510/8),reg:r2(REG_TOTAL/8),scheduleKey:'new'},
+  'OPT-5N':{hotel:'Garden Court',type:'Not Sharing',total:r2((7180+REG_TOTAL)/8),accom:r2(7180/8),reg:r2(REG_TOTAL/8),scheduleKey:'new'},
+  'OPT-6N':{hotel:'Garden Court',type:'Sharing',total:r2((4170+REG_TOTAL)/8),accom:r2(4170/8),reg:r2(REG_TOTAL/8),scheduleKey:'new'},
 };
 function fmt(n){ return 'R'+Number(n).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g,','); }
 function memberSchedule(m){
@@ -133,6 +141,8 @@ export function buildStatementHTML(m, entries, settings={}){
   const actualPaid = uniqueEntries.reduce((s,e)=>s+Number(e.creditAmount),0);
   const outstanding = Math.max(0, totalExp12-actualPaid);
   const isFullyPaid = !isFlex && outstanding<=0.05;
+  // Overpayment: anything received beyond the total commitment is shown as a credit.
+  const credit = isFlex ? 0 : Math.max(0, Math.round((actualPaid-totalExp12)*100)/100);
   const monthsCovered = (!isFlex && m.expectedMonthlyTotal>0) ? Math.floor(actualPaid/m.expectedMonthlyTotal) : 0;
   const excess = (!isFlex && m.expectedMonthlyTotal>0) ? actualPaid-(monthsCovered*m.expectedMonthlyTotal) : 0;
   const elapsed = elapsedMonths(m);
@@ -168,7 +178,7 @@ export function buildStatementHTML(m, entries, settings={}){
   }
 
   const banner = isFullyPaid
-    ? `<div style="background:#dcfce7;border:1px solid #86efac;border-radius:6px;padding:12px;margin:14px 0;color:#15803d;"><strong>&#10004; FULLY PAID ${DASH} Thank you!</strong> Your accommodation and registration are confirmed.</div>`
+    ? `<div style="background:#dcfce7;border:1px solid #86efac;border-radius:6px;padding:12px;margin:14px 0;color:#15803d;"><strong>&#10004; FULLY PAID ${DASH} Thank you!</strong> Your accommodation and registration are confirmed.${credit>0.05?` Your account is in <strong>credit by ${fmt(credit)}</strong> (payments received exceed the total due).`:''}</div>`
     : (!isFlex ? `<div style="background:#fef9c3;border:1px solid #fde047;border-radius:6px;padding:12px;margin:14px 0;color:#854d0e;"><strong>&#9888; Outstanding Balance: ${fmt(outstanding)}</strong> ${DASH} please settle by ${deadline}.</div>` : '');
 
   const bankBox = isFullyPaid ? '' : `<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px;padding:12px;margin:14px 0;">
@@ -209,6 +219,7 @@ export function buildStatementHTML(m, entries, settings={}){
       <table style="width:100%;font-size:13px;">
         <tr><td>Total Amount Due (${nMo} mo)</td><td style="text-align:right;font-weight:700;">${isFlex?'Flexible':fmt(totalExp12)}</td></tr>
         <tr><td>Total Received to Date</td><td style="text-align:right;font-weight:700;color:#16a34a;">${fmt(actualPaid)}</td></tr>
+        ${credit>0.05?`<tr><td style="color:#2456a4;font-weight:700;">Credit Balance (paid in excess of total due)</td><td style="text-align:right;font-weight:700;color:#2456a4;">${fmt(credit)}</td></tr>`:''}
         <tr style="border-top:2px solid #1a3a6b;"><td style="font-weight:800;">Balance Outstanding</td><td style="text-align:right;font-weight:800;color:${isFullyPaid?'#16a34a':'#dc2626'};">${isFullyPaid?'NIL '+DASH+' FULLY PAID':fmt(outstanding)}</td></tr>
       </table>
     </div>
