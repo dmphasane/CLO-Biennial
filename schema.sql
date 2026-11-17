@@ -38,6 +38,9 @@ ALTER TABLE members ADD COLUMN IF NOT EXISTS last_statement_sent_at TIMESTAMPTZ;
 ALTER TABLE members ADD COLUMN IF NOT EXISTS district TEXT;
 ALTER TABLE members ADD COLUMN IF NOT EXISTS last_statement_channel TEXT;
 ALTER TABLE members ADD COLUMN IF NOT EXISTS is_clergy BOOLEAN DEFAULT false;
+-- Statement "sent" status is tracked per channel so Email / WhatsApp can be filtered separately
+ALTER TABLE members ADD COLUMN IF NOT EXISTS last_email_sent_at TIMESTAMPTZ;
+ALTER TABLE members ADD COLUMN IF NOT EXISTS last_whatsapp_sent_at TIMESTAMPTZ;
 
 CREATE INDEX IF NOT EXISTS idx_members_ref ON members(payment_ref);
 CREATE INDEX IF NOT EXISTS idx_members_conf ON members(conference_code);

@@ -6,7 +6,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<title>NEDLO Biennial 2027 – Stokvel Fund Reconciliation Tool v4.7-build30</title>
+<title>NEDLO Biennial 2027 – Stokvel Fund Reconciliation Tool v4.8-build31</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -137,7 +137,7 @@ select[multiple]{height:auto;min-height:80px;}
       </select>
     </div>
     <button class="btn btn-primary" style="width:100%;justify-content:center;padding:12px;" onclick="doLogin()">Sign In</button>
-    <p style="text-align:center;margin-top:14px;font-size:11px;color:var(--muted);">Protected under POPIA. Authorised personnel only. <strong>v4.7-build30</strong></p>
+    <p style="text-align:center;margin-top:14px;font-size:11px;color:var(--muted);">Protected under POPIA. Authorised personnel only. <strong>v4.8-build31</strong></p>
     <p style="text-align:center;margin-top:6px;font-size:11px;"><a href="/help" style="color:var(--primary);font-weight:600;text-decoration:none;">❓ Need help? Read the guide</a></p>
   </div>
 </div>
@@ -212,6 +212,7 @@ select[multiple]{height:auto;min-height:80px;}
           <button class="btn btn-primary btn-sm" onclick="openMemberModal()">+ Add Member</button>
         </div>
       </div>
+      <div id="members-stats" class="stat-grid"></div>
       <div class="card">
         <div class="filter-bar">
           <div class="form-group"><label>Filter Conference</label>
@@ -222,11 +223,11 @@ select[multiple]{height:auto;min-height:80px;}
               <option value="__UNASSIGNED__">⚠ Unassigned / Unrecognized</option>
             </select>
           </div>
-          <div class="form-group"><label>Clergy</label>
+          <div class="form-group"><label>Member Type</label>
             <select id="member-filter-clergy" onchange="renderMembersTable()">
-              <option value="">All Members</option>
+              <option value="">All Members (Clergy + Lay)</option>
               <option value="clergy">Clergy only</option>
-              <option value="lay">Lay only</option>
+              <option value="lay">Lay (non-clergy) only</option>
             </select>
           </div>
           <div class="form-group"><label>Search</label>
@@ -491,6 +492,8 @@ select[multiple]{height:auto;min-height:80px;}
             <option value="outstanding">Has Outstanding Balance</option>
             <option value="current">Fully Current</option>
             <option value="noemail">No Email Address</option>
+            <option value="email-not-sent">📧 Email NOT sent</option>
+            <option value="whatsapp-not-sent">🟢 WhatsApp NOT sent</option>
           </select>
         </div>
         <div class="form-group"><label>Search</label>
@@ -1001,6 +1004,45 @@ function memberPaid(memberId){
 // include a hotel (not Registration Only, and not once-off/flexible members).
 const STAY_LABEL = '5 days / 4 nights';
 function hasHotelStay(opt){ return !!(opt && opt.hotel && opt.hotel!=='N/A' && opt.scheduleKey!=='regonly'); }
+// ── Statement "sent" status, tracked PER CHANNEL (Email / WhatsApp) ──
+// Older records only stored the LAST channel used (lastStatementChannel), so sending a
+// WhatsApp after an email lost the email record. Copy that old value into the per-channel
+// field so existing history is honoured.
+function ensureChannelFields(m){
+  if(!m.lastEmailSentAt && m.lastStatementChannel==='email' && m.lastStatementSentAt) m.lastEmailSentAt = m.lastStatementSentAt;
+  if(!m.lastWhatsappSentAt && m.lastStatementChannel==='whatsapp' && m.lastStatementSentAt) m.lastWhatsappSentAt = m.lastStatementSentAt;
+}
+// Keep the overall "last sent" fields in step with the per-channel ones (most recent wins).
+function recomputeLastSent(m){
+  const e = m.lastEmailSentAt, w = m.lastWhatsappSentAt;
+  if(e || w){
+    if(e && (!w || e >= w)){ m.lastStatementSentAt = e; m.lastStatementChannel = 'email'; }
+    else { m.lastStatementSentAt = w; m.lastStatementChannel = 'whatsapp'; }
+  } else if(m.lastStatementChannel==='email' || m.lastStatementChannel==='whatsapp'){
+    m.lastStatementSentAt = null; m.lastStatementChannel = null;
+  }
+}
+// Record that a statement went out on a channel ('email' | 'whatsapp').
+function recordSent(m, channel, stamp){
+  ensureChannelFields(m);
+  stamp = stamp || new Date().toISOString();
+  if(channel==='email') m.lastEmailSentAt = stamp;
+  else if(channel==='whatsapp') m.lastWhatsappSentAt = stamp;
+  recomputeLastSent(m);
+}
+function markChannelSent(memberId, channel){
+  const m = DB.members.find(x=>x.id===memberId); if(!m) return;
+  recordSent(m, channel);
+  saveDB(); renderCommsTable();
+}
+function clearChannelSent(memberId, channel){
+  const m = DB.members.find(x=>x.id===memberId); if(!m) return;
+  ensureChannelFields(m);
+  if(channel==='email') m.lastEmailSentAt = null;
+  else if(channel==='whatsapp') m.lastWhatsappSentAt = null;
+  recomputeLastSent(m);
+  saveDB(); renderCommsTable();
+}
 // Credit (overpayment): matched payments in excess of the member's full commitment.
 // Returns 0 for flex/once-off members and for anyone who has not overpaid.
 function memberCredit(m){
@@ -1902,6 +1944,18 @@ function renderMembersTable(){
   const conf = document.getElementById('member-filter-conf')?.value||'';
   const search = (document.getElementById('member-search')?.value||'').toLowerCase();
   const clergyF = document.getElementById('member-filter-clergy')?.value||'';
+
+  // Summary tiles (always the overall register, whatever filters are applied below)
+  const statsEl = document.getElementById('members-stats');
+  if(statsEl){
+    const total = DB.members.length;
+    const clergyTotal = DB.members.filter(m=>m.isClergy).length;
+    const pct = total ? Math.round(clergyTotal/total*100) : 0;
+    statsEl.innerHTML = `
+      <div class="stat-card"><div class="val">${total}</div><div class="lbl">Registered Members</div></div>
+      <div class="stat-card" style="border-left-color:#6d28d9"><div class="val" style="color:#6d28d9">${clergyTotal}</div><div class="lbl">Clergy (${pct}% of members)</div></div>
+      <div class="stat-card"><div class="val">${total-clergyTotal}</div><div class="lbl">Lay Members</div></div>`;
+  }
   let members = DB.members.filter(m=>{
     if(conf==='__UNASSIGNED__'){ if(CONF_CODES.includes(m.conferenceCode)) return false; }
     else if(conf && m.conferenceCode!==conf) return false;
@@ -1918,7 +1972,7 @@ function renderMembersTable(){
   const el = document.getElementById('members-table-wrap');
   if(!members.length){ el.innerHTML='<p class="text-muted" style="padding:16px;">No members found. Add members using the button above.</p>'; return; }
   let html = `<table><thead><tr>
-    <th>Payment Ref</th><th>Full Name</th><th>Conference</th><th>Local Church</th>
+    <th>Payment Ref</th><th>Full Name</th><th>Type</th><th>Conference</th><th>Local Church</th>
     <th>Option</th><th>Monthly Total</th><th>Accom/Mo</th><th>Reg/Mo</th>
     <th>Email</th><th>Phone</th><th>Actions</th></tr></thead><tbody>`;
   members.forEach(m=>{
@@ -1926,9 +1980,10 @@ function renderMembersTable(){
     html += `<tr>
       <td class="font-bold">${m.paymentRef}</td>
       <td>${m.fullName}</td>
+      <td>${m.isClergy?'<span class="badge" style="background:#ede9fe;color:#6d28d9;">CLERGY</span>':'<span class="text-muted" style="font-size:11px;">Lay</span>'}</td>
       <td><span class="badge" style="background:#dbeafe;color:#1e40af;">${m.conferenceCode}</span></td>
       <td>${m.localChurch||'—'}</td>
-      <td>${m.accommodationOption}${isOnceOff?' (Once Off)':''} ${(m.cohort==='new')?'<span class="badge" style="background:#dcfce7;color:#15803d;font-size:9px;">NEW</span>':'<span class="badge" style="background:#f1f5f9;color:#64748b;font-size:9px;">LEG</span>'}${m.isClergy?' <span class="badge" style="background:#ede9fe;color:#6d28d9;font-size:9px;">CLERGY</span>':''}</td>
+      <td>${m.accommodationOption}${isOnceOff?' (Once Off)':''} ${(m.cohort==='new')?'<span class="badge" style="background:#dcfce7;color:#15803d;font-size:9px;">NEW</span>':'<span class="badge" style="background:#f1f5f9;color:#64748b;font-size:9px;">LEG</span>'}</td>
       <td class="text-right">${isOnceOff ? fmt(m.expectedMonthlyTotal)+' (total)' : fmt(m.expectedMonthlyTotal)+'/mo'}</td>
       <td class="text-right">${fmt(m.expectedAccom)}</td>
       <td class="text-right">${fmt(m.expectedReg)}${isOnceOff?' (×12)':''}</td>
@@ -3807,6 +3862,7 @@ function renderDashboard(){
     <div class="stat-card" style="border-left-color:var(--primary)"><div class="val" style="color:var(--primary)">${DB.members.filter(m=>DB.entries.some(e=>e.linkedMemberId===m.id&&e.matchStatus==='MATCHED')).length} / ${totalMembers}</div><div class="lbl">Members Paying vs Registered</div></div>
     <div class="stat-card" style="border-left-color:var(--info)"><div class="val" style="color:var(--info)">${creditRows.length}</div><div class="lbl">Members in Credit (Overpaid)</div></div>
     <div class="stat-card" style="border-left-color:var(--info)"><div class="val" style="color:var(--info)">${fmt(totalCredit)}</div><div class="lbl">Total Credit Held</div></div>
+    <div class="stat-card" style="border-left-color:#6d28d9"><div class="val" style="color:#6d28d9">${DB.members.filter(m=>m.isClergy).length}</div><div class="lbl">Clergy Delegates</div></div>
   `;
 
   // List of overpaid members
@@ -4678,16 +4734,21 @@ function exportRoomAllocation(){
 // ═══════════════════════════════════════════════════════════
 let currentLetterMemberId = null;
 
-function renderCommsTable(){
+// The members currently shown in the Communications table (all active filters applied).
+// Shared with Bulk Send so "send" always acts on exactly what the screen is showing.
+function getCommsFilteredMembers(){
   const confF = document.getElementById('comms-filter-conf')?.value||'';
   const statusF = document.getElementById('comms-filter-status')?.value||'';
   const search = (document.getElementById('comms-search')?.value||'').toLowerCase();
-  const elapsed = elapsedMonths();
+  DB.members.forEach(ensureChannelFields);
 
   let members = DB.members.filter(m=>{
     if(confF && m.conferenceCode!==confF) return false;
     if(search && !m.fullName.toLowerCase().includes(search) && !m.paymentRef.toLowerCase().includes(search)) return false;
     if(statusF==='noemail' && m.email) return false;
+    // Not yet sent on that channel. Only members we CAN reach on it are listed.
+    if(statusF==='email-not-sent' && (!m.email || m.lastEmailSentAt)) return false;
+    if(statusF==='whatsapp-not-sent' && (!m.phone || m.lastWhatsappSentAt)) return false;
     if(statusF==='outstanding'){
       const paid = memberPaid(m.id);
       const exp12 = OPTIONS[m.accommodationOption]?.flexAmount ? 0 : memberExpectedTotal(m);
@@ -4700,18 +4761,27 @@ function renderCommsTable(){
     }
     return true;
   });
-  members = sortMembers(members);
+  return sortMembers(members);
+}
+
+function renderCommsTable(){
+  const elapsed = elapsedMonths();
+  const members = getCommsFilteredMembers();
 
   const el = document.getElementById('comms-table-wrap');
   if(!members.length){ el.innerHTML='<p class="text-muted" style="padding:16px;">No members found.</p>'; return; }
 
-  // Sent-status summary counts for the header banner
-  let cntSent=0, cntNot=0;
-  members.forEach(m=>{ if(m.lastStatementSentAt) cntSent++; else cntNot++; });
+  // Sent-status summary, per channel (only members reachable on that channel are counted)
+  const withEmail = members.filter(m=>m.email), withPhone = members.filter(m=>m.phone);
+  const emailSent = withEmail.filter(m=>m.lastEmailSentAt).length;
+  const waSent = withPhone.filter(m=>m.lastWhatsappSentAt).length;
 
   let html = `<div class="alert alert-info" style="font-size:12px;margin-bottom:10px;">
-    📊 Sent status (current filter): <strong style="color:var(--success);">${cntSent} sent</strong> &nbsp;|&nbsp;
-    <strong style="color:var(--danger);">${cntNot} not sent</strong> &nbsp; of ${members.length} shown.
+    📊 Statements sent (current filter, ${members.length} shown):<br/>
+    📧 <strong>Email</strong> — <strong style="color:var(--success);">${emailSent} sent</strong> &nbsp;|&nbsp;
+    <strong style="color:var(--danger);">${withEmail.length-emailSent} not sent</strong> <span style="color:var(--muted);">(of ${withEmail.length} with an email address)</span><br/>
+    🟢 <strong>WhatsApp</strong> — <strong style="color:var(--success);">${waSent} sent</strong> &nbsp;|&nbsp;
+    <strong style="color:var(--danger);">${withPhone.length-waSent} not sent</strong> <span style="color:var(--muted);">(of ${withPhone.length} with a phone number)</span>
   </div>`;
   html+=`<table><thead><tr>
     <th><input type="checkbox" id="comms-select-all" onchange="document.querySelectorAll('.comms-cb').forEach(c=>c.checked=this.checked)" style="width:auto;"/></th>
@@ -4719,10 +4789,14 @@ function renderCommsTable(){
     <th class="text-right">Total Paid</th><th class="text-right">Outstanding</th><th>Status</th><th>Statement Sent</th><th>Actions</th>
   </tr></thead><tbody>`;
 
-  const channelBadge = (ch)=>{
-    if(ch==='email') return '📧 Email';
-    if(ch==='whatsapp') return '🟢 WhatsApp';
-    return 'Sent';
+  // One line per channel: shows when it was sent (with an undo), or lets you mark it sent.
+  const channelLine = (m, ch, icon, label, ts, reachable)=>{
+    if(!reachable) return `<div style="color:var(--muted);font-size:11px;white-space:nowrap;">${icon} ${label}: ${ch==='email'?'no email address':'no phone number'}</div>`;
+    return ts
+      ? `<div style="white-space:nowrap;margin-bottom:2px;"><span class="badge badge-paid">${icon} ${label}</span> <span style="color:var(--muted);font-size:11px;">${fmtSentStamp(ts)}</span>
+           <button class="btn btn-sm btn-outline" style="font-size:10px;padding:1px 5px;" onclick="clearChannelSent('${m.id}','${ch}')" title="Mark ${label} as NOT sent">↺</button></div>`
+      : `<div style="white-space:nowrap;margin-bottom:2px;"><span class="text-muted">${icon} ${label}: not sent</span>
+           <button class="btn btn-sm btn-outline" style="font-size:10px;padding:1px 5px;" onclick="markChannelSent('${m.id}','${ch}')" title="Mark ${label} as sent (e.g. after you sent it yourself)">✓ Mark</button></div>`;
   };
 
   members.forEach(m=>{
@@ -4732,12 +4806,13 @@ function renderCommsTable(){
     const totalExp12 = isFlexAmount ? 0 : memberExpectedTotal(m);
     const outstanding = isFlexAmount ? 0 : Math.max(0, totalExp12 - actualPaid);
     const allPaid = isFlexAmount ? actualPaid>0 : outstanding<=0.05;
-    const sentCell = m.lastStatementSentAt
-      ? `<span class="badge badge-paid">${channelBadge(m.lastStatementChannel)}</span><br/>
-         <span style="color:var(--muted);font-size:11px;">${fmtSentStamp(m.lastStatementSentAt)}</span><br/>
-         <button class="btn btn-sm btn-outline" style="margin-top:3px;font-size:10px;padding:2px 6px;" onclick="clearSentStatus('${m.id}')" title="Mark as NOT sent">↺ Clear</button>`
-      : `<span class="text-muted">Not sent</span><br/>
-         <button class="btn btn-sm btn-outline" style="margin-top:3px;font-size:10px;padding:2px 6px;" onclick="markSentManual('${m.id}')" title="Mark as sent (e.g. after you sent it on WhatsApp)">✓ Mark sent</button>`;
+    let sentCell = channelLine(m,'email','📧','Email',m.lastEmailSentAt,!!m.email)
+                 + channelLine(m,'whatsapp','🟢','WhatsApp',m.lastWhatsappSentAt,!!m.phone);
+    // Older "marked sent manually" records did not record a channel — keep showing them.
+    if(m.lastStatementSentAt && !m.lastEmailSentAt && !m.lastWhatsappSentAt){
+      sentCell += `<div style="font-size:11px;color:var(--muted);">Marked sent manually ${fmtSentStamp(m.lastStatementSentAt)}
+        <button class="btn btn-sm btn-outline" style="font-size:10px;padding:1px 5px;" onclick="clearSentStatus('${m.id}')" title="Clear this manual mark">↺</button></div>`;
+    }
     const contact = (m.email?('📧 '+m.email):'') + (m.email&&m.phone?'<br/>':'') + (m.phone?('📱 '+m.phone):'') || '<span style="color:var(--danger);">No contact</span>';
     html+=`<tr>
       <td><input type="checkbox" class="comms-cb" value="${m.id}" style="width:auto;"/></td>
@@ -4760,18 +4835,13 @@ function renderCommsTable(){
   el.innerHTML=html;
 }
 
-// Manually mark a statement as sent (e.g. after sending via WhatsApp)
-function markSentManual(memberId){
-  const m = DB.members.find(x=>x.id===memberId); if(!m) return;
-  m.lastStatementSentAt = new Date().toISOString();
-  m.lastStatementChannel = m.lastStatementChannel || 'manual';
-  saveDB(); renderCommsTable();
-}
-// Clear the sent status (mark as not sent)
+// Clear ALL sent status for a member (used for older manual marks with no channel recorded)
 function clearSentStatus(memberId){
   const m = DB.members.find(x=>x.id===memberId); if(!m) return;
   m.lastStatementSentAt = null;
   m.lastStatementChannel = null;
+  m.lastEmailSentAt = null;
+  m.lastWhatsappSentAt = null;
   saveDB(); renderCommsTable();
 }
 
@@ -4833,8 +4903,7 @@ function whatsappMember(memberId){
   window.open('https://wa.me/'+phone+'?text='+text, '_blank');
   // Mark as shared via WhatsApp (you still tap Send in WhatsApp; use the
   // "Mark sent" / "Clear" controls if you need to correct the status).
-  m.lastStatementSentAt = new Date().toISOString();
-  m.lastStatementChannel = 'whatsapp';
+  recordSent(m, 'whatsapp');
   saveDB();
   renderCommsTable();
 }
@@ -5132,8 +5201,7 @@ async function quickSendEmail(memberId, btn){
     await flushSync();
     const r = await apiFetch('/api/send-statement', { method:'POST', body: JSON.stringify({ memberId, settings }) });
     // Record the sent timestamp against the member for the Communications status view
-    m.lastStatementSentAt = new Date().toISOString();
-    m.lastStatementChannel = 'email';
+    recordSent(m, 'email');
     saveDB();
     renderCommsTable();
     alert('Statement emailed to '+m.fullName+' ('+m.email+')');
@@ -5266,11 +5334,14 @@ function buildPlainTextStatement(m){
 
 async function bulkSendEmails(){
   const checked = Array.from(document.querySelectorAll('.comms-cb:checked'));
-  const ids = checked.length>0 ? checked.map(c=>c.value) : DB.members.map(m=>m.id);
+  // Nothing ticked = send to exactly what the table is showing (all active filters applied),
+  // NOT every member. So filtering to "Email NOT sent" never re-emails people already contacted.
+  const ids = checked.length>0 ? checked.map(c=>c.value) : getCommsFilteredMembers().map(m=>m.id);
+  const scope = checked.length>0 ? 'the ticked members' : 'the members currently shown in the list';
   const withEmail = ids.filter(id=>DB.members.find(m=>m.id===id)?.email);
   const noEmail = ids.length - withEmail.length;
   if(!withEmail.length){ alert('No members with email addresses found.'); return; }
-  if(!confirm(`Send contribution statements to ${withEmail.length} members via the server?${noEmail>0?' ('+noEmail+' skipped — no email)':''}\n\nThis may take a moment.`)){ return; }
+  if(!confirm(`Send contribution statements to ${withEmail.length} members (${scope}) via the server?${noEmail>0?' ('+noEmail+' skipped — no email)':''}\n\nThis may take a moment.`)){ return; }
   const settings = {
     deadline: document.getElementById('comms-deadline')?.value || '31 May 2027',
     finsecName: document.getElementById('comms-finsec-name')?.value || 'Mr Dumisani Mphasane',
@@ -5281,7 +5352,7 @@ async function bulkSendEmails(){
     // Stamp the sent timestamp on each member the server confirmed as sent
     const stamp = new Date().toISOString();
     const sentIds = Array.isArray(r.sentIds) ? r.sentIds : withEmail; // fallback if older server
-    sentIds.forEach(id=>{ const mm=DB.members.find(x=>x.id===id); if(mm){ mm.lastStatementSentAt = stamp; mm.lastStatementChannel = 'email'; } });
+    sentIds.forEach(id=>{ const mm=DB.members.find(x=>x.id===id); if(mm){ recordSent(mm, 'email', stamp); } });
     saveDB();
     renderCommsTable();
     alert(`Bulk send complete: ${r.sent} sent, ${r.skipped} skipped, ${r.failed} failed.`);

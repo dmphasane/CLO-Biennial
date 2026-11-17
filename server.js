@@ -178,13 +178,13 @@ app.post('/api/members', authRequired, async (req, res)=>{
   if(tomb.rows.length) return res.json({ ok:true, skipped:'deleted' });
   await query(
     `INSERT INTO members (id,full_name,conference_code,local_church,email,phone,accommodation_option,
-       expected_monthly_total,expected_accom,expected_reg,payment_ref,registration_date,ledger,cohort,last_statement_sent_at,district,last_statement_channel,is_clergy)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
+       expected_monthly_total,expected_accom,expected_reg,payment_ref,registration_date,ledger,cohort,last_statement_sent_at,district,last_statement_channel,is_clergy,last_email_sent_at,last_whatsapp_sent_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
      ON CONFLICT (id) DO UPDATE SET full_name=$2,conference_code=$3,local_church=$4,email=$5,phone=$6,
        accommodation_option=$7,expected_monthly_total=$8,expected_accom=$9,expected_reg=$10,payment_ref=$11,
-       ledger=$13,cohort=$14,last_statement_sent_at=$15,district=$16,last_statement_channel=$17,is_clergy=$18,updated_at=now()`,
+       ledger=$13,cohort=$14,last_statement_sent_at=$15,district=$16,last_statement_channel=$17,is_clergy=$18,last_email_sent_at=$19,last_whatsapp_sent_at=$20,updated_at=now()`,
     [m.id, m.fullName, m.conferenceCode, m.localChurch, m.email, m.phone, m.accommodationOption,
-     m.expectedMonthlyTotal, m.expectedAccom, m.expectedReg, m.paymentRef, m.registrationDate, JSON.stringify(m.ledger||{}), m.cohort||'legacy', m.lastStatementSentAt||null, m.district||null, m.lastStatementChannel||null, m.isClergy===true]
+     m.expectedMonthlyTotal, m.expectedAccom, m.expectedReg, m.paymentRef, m.registrationDate, JSON.stringify(m.ledger||{}), m.cohort||'legacy', m.lastStatementSentAt||null, m.district||null, m.lastStatementChannel||null, m.isClergy===true, m.lastEmailSentAt||null, m.lastWhatsappSentAt||null]
   );
   await logAudit(req.user, 'MemberSave', m.paymentRef);
   res.json({ ok:true });
@@ -537,6 +537,7 @@ function rowToMember(r){
     expectedReg:Number(r.expected_reg), paymentRef:r.payment_ref, registrationDate:r.registration_date,
     cohort:r.cohort||'legacy', lastStatementSentAt:r.last_statement_sent_at||null, lastStatementChannel:r.last_statement_channel||null, district:r.district||'',
     isClergy:r.is_clergy===true,
+    lastEmailSentAt:r.last_email_sent_at||null, lastWhatsappSentAt:r.last_whatsapp_sent_at||null,
     roomNumber:r.room_number, hotelRoom:r.hotel_room, roomPartner:r.room_partner, ledger:r.ledger||{} };
 }
 function rowToEntry(r){
@@ -570,7 +571,7 @@ app.post('/api/send-statement', authRequired, async (req, res)=>{
       html,
     });
     if(!r.ok) return res.status(500).json({ error:`Email failed (${r.provider}): ${r.error}` });
-    await query("UPDATE members SET last_statement_sent_at=now(), last_statement_channel='email' WHERE id=$1", [memberId]);
+    await query("UPDATE members SET last_statement_sent_at=now(), last_statement_channel='email', last_email_sent_at=now() WHERE id=$1", [memberId]);
     await logAudit(req.user, 'EmailSent', `Statement emailed to ${m.fullName} (${m.email}) via ${r.provider}`);
     res.json({ ok:true });
   }catch(e){ console.error('send-statement error:', e.message); res.status(500).json({ error:e.message }); }
@@ -595,7 +596,7 @@ app.post('/api/send-bulk', authRequired, async (req, res)=>{
         subject: `NEDLO Biennial 2027 Stokvel Fund – Contribution Statement for ${m.fullName}`,
         html,
       });
-      if(r.ok){ sent++; sentIds.push(id); await query("UPDATE members SET last_statement_sent_at=now(), last_statement_channel='email' WHERE id=$1", [id]); } else { failed.push(id); console.error('bulk send fail', id, r.error); }
+      if(r.ok){ sent++; sentIds.push(id); await query("UPDATE members SET last_statement_sent_at=now(), last_statement_channel='email', last_email_sent_at=now() WHERE id=$1", [id]); } else { failed.push(id); console.error('bulk send fail', id, r.error); }
       await new Promise(res=>setTimeout(res, 300)); // gentle pacing
     }catch(e){ failed.push(id); console.error('bulk send fail', id, e.message); }
   }
