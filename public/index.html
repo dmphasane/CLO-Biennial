@@ -6,7 +6,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<title>NEDLO Biennial 2027 – Stokvel Fund Reconciliation Tool v4.8-build31</title>
+<title>NEDLO Biennial 2027 – Stokvel Fund Reconciliation Tool v4.9-build32</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -137,7 +137,7 @@ select[multiple]{height:auto;min-height:80px;}
       </select>
     </div>
     <button class="btn btn-primary" style="width:100%;justify-content:center;padding:12px;" onclick="doLogin()">Sign In</button>
-    <p style="text-align:center;margin-top:14px;font-size:11px;color:var(--muted);">Protected under POPIA. Authorised personnel only. <strong>v4.8-build31</strong></p>
+    <p style="text-align:center;margin-top:14px;font-size:11px;color:var(--muted);">Protected under POPIA. Authorised personnel only. <strong>v4.9-build32</strong></p>
     <p style="text-align:center;margin-top:6px;font-size:11px;"><a href="/help" style="color:var(--primary);font-weight:600;text-decoration:none;">❓ Need help? Read the guide</a></p>
   </div>
 </div>
@@ -209,6 +209,7 @@ select[multiple]{height:auto;min-height:80px;}
           <button class="btn btn-outline btn-sm" onclick="flagLegacyMembers()" title="Mark members registered before 1 Oct 2026 as the legacy (Jun–May 12-month) cohort">🏷 Flag Legacy</button>
           <button class="btn btn-warning btn-sm" onclick="findDuplicateMembers()" title="Scan the register for likely duplicate members (same person under different names)">🔍 Find Duplicate Members</button>
           <button class="btn btn-warning btn-sm" onclick="run4NightCorrection()" title="One-time: correct accommodation amounts from the old 5-night basis to the correct 4-night basis. Shows a dry-run before applying.">🏨 4-Night Price Correction</button>
+          <button id="flex-migrate-btn" class="btn btn-warning btn-sm" onclick="runFlexMigration()" style="display:none;" title="One-time: the once-off / flexible option no longer exists. Move those members to Registration Only. Shows a preview before applying.">🔄 Migrate Flex → Registration Only</button>
           <button class="btn btn-primary btn-sm" onclick="openMemberModal()">+ Add Member</button>
         </div>
       </div>
@@ -1277,6 +1278,97 @@ async function confirmApply4Night(){
   alert(`Done. Corrected ${n} member(s). Review the Dashboard and Reports to verify, then (optionally) send updated statements from Communications.${saveMsg}`);
 }
 
+// ═══════════════════════════════════════════════════════════
+// MIGRATE ONCE-OFF / FLEXIBLE (OPT-7) MEMBERS → REGISTRATION ONLY
+// ═══════════════════════════════════════════════════════════
+// The flexible / once-off option no longer exists. These members become Registration Only
+// (R1,900 a month over 3 months = R5,700). Their payments are NOT touched: only the option,
+// expected amounts and ledger change, and the ledger is rebuilt from the payments already
+// matched to them (so anything paid beyond R5,700 shows up as a credit).
+function isFlexMember(m){
+  const o = OPTIONS[m.accommodationOption];
+  return !!(o && (o.flexAmount || o.onceOff));
+}
+// Read-only preview of who would be migrated and where they would end up.
+function dryRunFlexMigration(){
+  const ro = OPTIONS['REG-ONLY'];
+  const commitment = parseFloat((ro.total * SCHEDULES.regonly.months.length).toFixed(2));
+  return DB.members.filter(isFlexMember).map(m=>{
+    const paid = memberPaid(m.id);
+    return { id:m.id, ref:m.paymentRef, name:m.fullName, conf:m.conferenceCode, paid, commitment,
+             balance: parseFloat((commitment - paid).toFixed(2)) };   // >0 still owes, <0 credit
+  });
+}
+function applyFlexMigration(rows){
+  const ro = OPTIONS['REG-ONLY'];
+  let n = 0;
+  rows.forEach(r=>{
+    const m = DB.members.find(x=>x.id===r.id);
+    if(!m || !isFlexMember(m)) return;
+    m.accommodationOption = 'REG-ONLY';
+    m.cohort = 'new';                       // Registration Only is a new-cohort option
+    m.expectedMonthlyTotal = ro.total;
+    m.expectedAccom = ro.accom;
+    m.expectedReg = ro.reg;
+    recalcLedgerForMember(m.id);            // rebuilds the 3-month ledger from their existing payments
+    n++;
+  });
+  if(n>0) auditLog('FlexMigratedToRegOnly', `Migrated ${n} once-off/flexible member(s) to Registration Only: ${rows.map(r=>r.ref).join(', ')}`);
+  return n;
+}
+// Save to the server immediately and return a short result message (instead of trusting
+// the delayed background save).
+async function saveToServerNow(){
+  if(typeof apiPushAll !== 'function' || !AUTH_TOKEN) return '';
+  clearTimeout(_apiSaveTimer);
+  try{
+    const res = await apiPushAll(DB);
+    return res.failures.length
+      ? `\n\n⚠ Saved ${res.saved} of ${res.total} members to the server. ${res.failures.length} problem(s):\n- ` + res.failures.slice(0,8).map(f=>f.name+': '+f.error).join('\n- ')
+      : `\n\n✅ All ${res.total} members saved to the server.`;
+  }catch(e){ return '\n\n⚠ Could not confirm the server save: '+e.message; }
+}
+function runFlexMigration(){
+  const rows = dryRunFlexMigration();
+  if(!rows.length){ alert('No once-off / flexible members remain — nothing to migrate.'); return; }
+  const balCell = r => r.balance > 0.05 ? `<span style="color:var(--danger);font-weight:700;">Owes ${fmt(r.balance)}</span>`
+                     : r.balance < -0.05 ? `<span style="color:var(--info);font-weight:700;">Credit ${fmt(-r.balance)}</span>`
+                     : `<span style="color:var(--success);font-weight:700;">Fully paid</span>`;
+  let html = `<div class="modal-backdrop" id="flex-modal"><div class="modal" style="width:760px;max-width:96vw;">
+    <div class="modal-title">Migrate Once-Off / Flexible Members → Registration Only</div>
+    <div class="alert alert-warn" style="font-size:12.5px;">
+      <strong>${rows.length}</strong> member(s) will become <strong>Registration Only</strong>: ${fmt(rows[0].commitment/3)} a month over
+      3 months (Oct–Dec 2026), <strong>${fmt(rows[0].commitment)}</strong> in total. Their payments are not changed.
+      Anyone who has paid more than ${fmt(rows[0].commitment)} will show as being in <em>credit</em>.
+      <strong>Nothing is saved until you click “Migrate”.</strong>
+    </div>
+    <div class="table-wrap" style="max-height:50vh;overflow:auto;"><table><thead><tr>
+      <th>Reference</th><th>Name</th><th>Conf.</th><th class="text-right">Paid to date</th><th class="text-right">New total</th><th>After migration</th>
+    </tr></thead><tbody>`;
+  rows.forEach(r=>{
+    html += `<tr><td class="font-bold">${r.ref}</td><td>${r.name}</td>
+      <td><span class="badge" style="background:#dbeafe;color:#1e40af;">${r.conf}</span></td>
+      <td class="text-right">${fmt(r.paid)}</td><td class="text-right">${fmt(r.commitment)}</td><td>${balCell(r)}</td></tr>`;
+  });
+  html += `</tbody></table></div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="document.getElementById('flex-modal').remove()">Cancel</button>
+      <button class="btn btn-danger" onclick="confirmFlexMigration()">Migrate ${rows.length} member(s)</button>
+    </div></div></div>`;
+  const wrap = document.createElement('div'); wrap.innerHTML = html; document.body.appendChild(wrap.firstChild);
+  window.__flexRows = rows;
+}
+async function confirmFlexMigration(){
+  const rows = window.__flexRows||[];
+  if(!rows.length) return;
+  if(!confirm(`Migrate ${rows.length} member(s) to Registration Only? Export a Members CSV first if you want a backup.`)) return;
+  const n = applyFlexMigration(rows);
+  const modal = document.getElementById('flex-modal'); if(modal) modal.remove();
+  renderAll();
+  const saveMsg = await saveToServerNow();
+  alert(`Done. ${n} member(s) migrated to Registration Only. Check their ledgers and the Dashboard.${saveMsg}`);
+}
+
 function renderAll(){
   // Auto-update all member records to latest option rates
   updateAllMemberRates();
@@ -1944,6 +2036,10 @@ function renderMembersTable(){
   const conf = document.getElementById('member-filter-conf')?.value||'';
   const search = (document.getElementById('member-search')?.value||'').toLowerCase();
   const clergyF = document.getElementById('member-filter-clergy')?.value||'';
+
+  // The one-time flex migration button only shows while flexible members still exist
+  const flexBtn = document.getElementById('flex-migrate-btn');
+  if(flexBtn) flexBtn.style.display = DB.members.some(isFlexMember) ? '' : 'none';
 
   // Summary tiles (always the overall register, whatever filters are applied below)
   const statsEl = document.getElementById('members-stats');
