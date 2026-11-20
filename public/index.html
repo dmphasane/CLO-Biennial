@@ -6,7 +6,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<title>NEDLO Biennial 2027 – Stokvel Fund Reconciliation Tool v4.9-build32</title>
+<title>NEDLO Biennial 2027 – Stokvel Fund Reconciliation Tool v4.9-build33</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -137,7 +137,7 @@ select[multiple]{height:auto;min-height:80px;}
       </select>
     </div>
     <button class="btn btn-primary" style="width:100%;justify-content:center;padding:12px;" onclick="doLogin()">Sign In</button>
-    <p style="text-align:center;margin-top:14px;font-size:11px;color:var(--muted);">Protected under POPIA. Authorised personnel only. <strong>v4.9-build32</strong></p>
+    <p style="text-align:center;margin-top:14px;font-size:11px;color:var(--muted);">Protected under POPIA. Authorised personnel only. <strong>v4.9-build33</strong></p>
     <p style="text-align:center;margin-top:6px;font-size:11px;"><a href="/help" style="color:var(--primary);font-weight:600;text-decoration:none;">❓ Need help? Read the guide</a></p>
   </div>
 </div>
@@ -782,7 +782,10 @@ const OPTIONS_NEW = {
 const OPTIONS = Object.assign({}, OPTIONS_LEGACY, OPTIONS_NEW);
 const CONF_CODES = ['ECLO','NCLO','WCLO','OCLO','MMMCLO'];
 const CONF_NAMES = { ECLO:'East', NCLO:'Natal', WCLO:'West', OCLO:'Orangia', MMMCLO:'M M Mokone' };
-const CONF_TARGETS = { ECLO:100, NCLO:60, WCLO:120, OCLO:100, MMMCLO:100 };
+const CONF_TARGETS = { ECLO:100, NCLO:60, WCLO:100, OCLO:100, MMMCLO:100 };
+// Clergy delegates target. Clergy also belong to a conference, so they are already counted in
+// the conference rows; this is a separate sub-target and is NOT added to the conference total.
+const CLERGY_TARGET = 40;
 const CONTRIB_MONTHS = [
   {key:'2026-06', label:'Jun 2026'},
   {key:'2026-07', label:'Jul 2026'},
@@ -4070,6 +4073,20 @@ function renderDashboard(){
     <td class="text-right">${totalReg}</td><td class="text-right">${totalTarget}</td>
     <td class="text-right" style="color:${totVar>=0?'var(--success)':'var(--danger)'};">${totVar>=0?'+':''}${totVar}</td>
     <td>${totPct}% of target</td></tr>`;
+  // Clergy target row (separate sub-target; clergy are already counted in the rows above)
+  const clergyReg = DB.members.filter(m=>m.isClergy).length;
+  const clergyVar = clergyReg - CLERGY_TARGET;
+  const clergyPct = CLERGY_TARGET>0 ? Math.min(100,((clergyReg/CLERGY_TARGET)*100)).toFixed(0) : 0;
+  tgtHtml+=`<tr style="background:#f5f3ff;">
+      <td><span class="badge" style="background:#ede9fe;color:#6d28d9;">CLERGY</span></td>
+      <td>Clergy delegates <span style="color:var(--muted);font-size:11px;">(also counted in their conference above)</span></td>
+      <td class="text-right font-bold">${clergyReg}</td>
+      <td class="text-right">${CLERGY_TARGET}</td>
+      <td class="text-right" style="color:${clergyVar>=0?'var(--success)':'var(--danger)'};font-weight:700;">${clergyVar>=0?'+':''}${clergyVar}</td>
+      <td><div style="display:flex;align-items:center;gap:6px;">
+        <div style="flex:1;background:#e5e7eb;border-radius:4px;height:8px;"><div style="width:${clergyPct}%;background:${clergyPct>=100?'var(--success)':clergyPct>=50?'var(--warning)':'var(--danger)'};height:8px;border-radius:4px;"></div></div>
+        <span style="font-size:11px;font-weight:700;">${clergyPct}%</span></div></td>
+    </tr>`;
   tgtHtml+=`</tbody></table></div>`;
   if(unassigned.length>0){
     tgtHtml+=`<div class="alert alert-warn mt-2" style="font-size:12px;">⚠️ ${unassigned.length} member(s) have an unrecognized or blank conference code and are not counted in any conference. Edit these members to assign a valid conference (ECLO, NCLO, WCLO, OCLO, MMMCLO).</div>`;
