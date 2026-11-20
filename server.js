@@ -9,7 +9,10 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
 import { pool, query } from './db.js';
-import { makeTransport, sendEmail, buildStatementHTML, buildRegistrationConfirmationHTML } from './email.js';
+import { makeTransport, sendEmail, buildStatementHTML, buildRegistrationConfirmationHTML, getAccomTotal } from './email.js';
+// Shared payment-plan calculator (same file the browser uses) — registers itself as globalThis.NedloPlan
+import './public/plan.js';
+const NedloPlan = globalThis.NedloPlan;
 
 dotenv.config();
 
@@ -178,13 +181,16 @@ app.post('/api/members', authRequired, async (req, res)=>{
   if(tomb.rows.length) return res.json({ ok:true, skipped:'deleted' });
   await query(
     `INSERT INTO members (id,full_name,conference_code,local_church,email,phone,accommodation_option,
-       expected_monthly_total,expected_accom,expected_reg,payment_ref,registration_date,ledger,cohort,last_statement_sent_at,district,last_statement_channel,is_clergy,last_email_sent_at,last_whatsapp_sent_at)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
+       expected_monthly_total,expected_accom,expected_reg,payment_ref,registration_date,ledger,cohort,last_statement_sent_at,district,last_statement_channel,is_clergy,last_email_sent_at,last_whatsapp_sent_at,plan)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)
      ON CONFLICT (id) DO UPDATE SET full_name=$2,conference_code=$3,local_church=$4,email=$5,phone=$6,
        accommodation_option=$7,expected_monthly_total=$8,expected_accom=$9,expected_reg=$10,payment_ref=$11,
-       ledger=$13,cohort=$14,last_statement_sent_at=$15,district=$16,last_statement_channel=$17,is_clergy=$18,last_email_sent_at=$19,last_whatsapp_sent_at=$20,updated_at=now()`,
+       ledger=$13,cohort=$14,last_statement_sent_at=$15,district=$16,last_statement_channel=$17,is_clergy=$18,last_email_sent_at=$19,last_whatsapp_sent_at=$20,
+       plan=COALESCE($21::jsonb, members.plan),updated_at=now()`,
     [m.id, m.fullName, m.conferenceCode, m.localChurch, m.email, m.phone, m.accommodationOption,
-     m.expectedMonthlyTotal, m.expectedAccom, m.expectedReg, m.paymentRef, m.registrationDate, JSON.stringify(m.ledger||{}), m.cohort||'legacy', m.lastStatementSentAt||null, m.district||null, m.lastStatementChannel||null, m.isClergy===true, m.lastEmailSentAt||null, m.lastWhatsappSentAt||null]
+     m.expectedMonthlyTotal, m.expectedAccom, m.expectedReg, m.paymentRef, m.registrationDate, JSON.stringify(m.ledger||{}), m.cohort||'legacy', m.lastStatementSentAt||null, m.district||null, m.lastStatementChannel||null, m.isClergy===true, m.lastEmailSentAt||null, m.lastWhatsappSentAt||null,
+     // A missing plan (e.g. a browser tab that was open before this feature existed) must NEVER wipe a stored plan
+     m.plan ? JSON.stringify(m.plan) : null]
   );
   await logAudit(req.user, 'MemberSave', m.paymentRef);
   res.json({ ok:true });
@@ -328,17 +334,34 @@ app.post('/api/register', regLimiter, async (req, res)=>{
     // Prevent duplicate refs
     const dup = await query('SELECT id FROM members WHERE payment_ref=$1', [m.paymentRef]);
     if(dup.rows.length) return res.status(409).json({ error:'A registration with this reference already exists.' });
+
+    // Build this member's payment plan HERE, using the server's clock and price list (never the
+    // browser's): it starts in the month they register, registration ends Dec 2026, accommodation
+    // ends May 2027. Unknown option codes keep the old flat behaviour (no plan).
+    const accomTotal = getAccomTotal(m.accommodationOption);
+    if(accomTotal !== null){
+      const plan = NedloPlan.buildPlan({ start: NedloPlan.currentMonthKey(), accomTotal });
+      m.plan = plan;
+      m.cohort = 'new';
+      m.registrationDate = NedloPlan.currentDate();
+      // For plan members these three hold the FIRST month's instalment (kept for older screens)
+      m.expectedMonthlyTotal = plan[0].due; m.expectedAccom = plan[0].accom; m.expectedReg = plan[0].reg;
+      m.ledger = {};
+      plan.forEach(r=>{ m.ledger[r.month] = { status:'NOT_PAID', entryId:null, received:0, accom:0, reg:0 }; });
+    }
     await query(
       `INSERT INTO members (id,full_name,conference_code,local_church,email,phone,accommodation_option,
-         expected_monthly_total,expected_accom,expected_reg,payment_ref,registration_date,ledger,cohort,district,is_clergy)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
+         expected_monthly_total,expected_accom,expected_reg,payment_ref,registration_date,ledger,cohort,district,is_clergy,plan)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,
       [m.id, m.fullName, m.conferenceCode, m.localChurch, m.email, m.phone, m.accommodationOption,
-       m.expectedMonthlyTotal, m.expectedAccom, m.expectedReg, m.paymentRef, m.registrationDate, JSON.stringify(m.ledger||{}), m.cohort||'new', m.district||null, m.isClergy===true]
+       m.expectedMonthlyTotal, m.expectedAccom, m.expectedReg, m.paymentRef, m.registrationDate, JSON.stringify(m.ledger||{}), m.cohort||'new', m.district||null, m.isClergy===true,
+       m.plan ? JSON.stringify(m.plan) : null]
     );
     // Respond to the registrant IMMEDIATELY once the member row is saved. All
     // non-essential writes (station list, audit, email) happen AFTER the response
     // so a slow DB/email operation can never make Render time out with a 502.
-    res.json({ ok:true });
+    // The plan is returned so the success screen shows exactly what was recorded.
+    res.json({ ok:true, plan: m.plan || null, registrationDate: m.registrationDate });
 
     // Deferred, fully-guarded follow-up work
     setImmediate(async ()=>{
@@ -538,6 +561,7 @@ function rowToMember(r){
     cohort:r.cohort||'legacy', lastStatementSentAt:r.last_statement_sent_at||null, lastStatementChannel:r.last_statement_channel||null, district:r.district||'',
     isClergy:r.is_clergy===true,
     lastEmailSentAt:r.last_email_sent_at||null, lastWhatsappSentAt:r.last_whatsapp_sent_at||null,
+    plan:r.plan||null,
     roomNumber:r.room_number, hotelRoom:r.hotel_room, roomPartner:r.room_partner, ledger:r.ledger||{} };
 }
 function rowToEntry(r){

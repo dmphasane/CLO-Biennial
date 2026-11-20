@@ -6,6 +6,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <title>NEDLO Biennial 2027 – Stokvel Registration</title>
 <script src="hierarchy.js"></script>
+<script src="plan.js"></script>
 <style>
 :root{--primary:#1a3a6b;--primary-light:#2456a4;--accent:#c8a951;--success:#16a34a;--danger:#dc2626;--bg:#f0f4f8;--surface:#fff;--border:#d1d5db;--text:#1f2937;--muted:#6b7280;}
 *{box-sizing:border-box;margin:0;padding:0;}
@@ -105,7 +106,7 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--muted);}
 
     <div class="card">
       <div class="card-title">Select Accommodation Option</div>
-      <div class="alert alert-info">All options include Biennial Registration (R5,700) + Accommodation, spread over <strong>8 months</strong> (Oct 2026 – May 2027). Registration Only is spread over 3 months (Oct – Dec 2026). New registrations use the 8-month schedule regardless of hotel. All hotel accommodation options are for <strong>5 days / 4 nights</strong>.</div>
+      <div class="alert alert-info">Your payments <strong>start this month</strong>. The Biennial Registration (R5,700) is spread from this month to <strong>December 2026</strong>, and accommodation from this month to <strong>May 2027</strong>, so the amounts below are worked out for today's date. (If you register after December, the registration fee is due in full in your first month.) All hotel accommodation options are for <strong>5 days / 4 nights</strong>.</div>
       <div id="options-list"></div>
     </div>
 
@@ -117,13 +118,15 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--muted);}
             <tr><td>Selected Option</td><td class="val" id="s-option"></td></tr>
             <tr><td>Hotel & Room Type</td><td class="val" id="s-hotel"></td></tr>
             <tr id="s-nights-row"><td>Booking</td><td class="val">5 days / 4 nights</td></tr>
-            <tr><td>Biennial Registration (monthly)</td><td class="val" id="s-reg"></td></tr>
-            <tr><td>Accommodation (monthly)</td><td class="val" id="s-accom"></td></tr>
-            <tr><td style="font-weight:700;">Monthly Instalment</td><td class="val" style="font-size:16px;color:var(--primary);" id="s-total"></td></tr>
+            <tr><td>Biennial Registration</td><td class="val" id="s-reg"></td></tr>
+            <tr><td>Accommodation</td><td class="val" id="s-accom"></td></tr>
+            <tr><td style="font-weight:700;">First payment (due this month)</td><td class="val" style="font-size:16px;color:var(--primary);" id="s-total"></td></tr>
             <tr><td>Total Commitment</td><td class="val" id="s-total12"></td></tr>
-            <tr><td>Period</td><td class="val" id="s-period">October 2026 onwards</td></tr>
+            <tr><td>Period</td><td class="val" id="s-period"></td></tr>
           </table>
         </div>
+        <div style="font-weight:700;color:var(--primary);margin:14px 0 6px;font-size:13px;">Your payment schedule</div>
+        <div id="s-schedule"></div>
         <div class="bank-box">
           <div style="font-weight:700;color:var(--primary);margin-bottom:8px;">Banking Details for Payment</div>
           <table>
@@ -167,9 +170,7 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--muted);}
 // NEW member registration (Oct 2026 cohort). New sign-ups choose from these
 // options only; the legacy Sandton/Garden Court options are closed to new members.
 const REG_TOTAL = 5700;
-const SCHED_NEW = ['2026-10','2026-11','2026-12','2027-01','2027-02','2027-03','2027-04','2027-05']; // 8 months
-const SCHED_REGONLY = ['2026-10','2026-11','2026-12']; // 3 months
-const SCHED_LEGACY = ['2026-06','2026-07','2026-08','2026-09','2026-10','2026-11','2026-12','2027-01','2027-02','2027-03','2027-04','2027-05']; // 12 months
+// (Payment schedules are no longer fixed lists: each member's plan is built from the month they register — see plan.js)
 const r2 = n => parseFloat(n.toFixed(2));
 const OPTIONS = {
   // ── New options (Oct 2026 cohort) ──
@@ -200,6 +201,51 @@ const OPTIONS = {
   o.reg   = r2(REG_TOTAL/8);
   o.total = r2((o.accomFull+REG_TOTAL)/8);
 });
+
+// ── Dynamic schedule ──
+// Each option's plan is worked out for TODAY (South African time): payments start this month,
+// registration ends Dec 2026, accommodation ends May 2027. The server rebuilds the plan itself
+// when the registration is received — this is what the member is SHOWN, not what is trusted.
+const ACCOM_TOTALS = { 'REG-ONLY':0, 'CAP-S':9800, 'CAP-SH':5520, 'CAT-S':6360, 'CAT-SH':3780,
+  'OPT-1N':15820, 'OPT-2N':8710, 'OPT-3N':17020, 'OPT-4N':8510, 'OPT-5N':7180, 'OPT-6N':4170 };
+const PLAN_START = NedloPlan.currentMonthKey();
+const MONTH_NAMES = ['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+function monthLabel(k){ const [y,m]=k.split('-'); return MONTH_NAMES[+m]+' '+y; }
+Object.keys(OPTIONS).forEach(k=>{
+  const o = OPTIONS[k];
+  o.accomTotal = ACCOM_TOTALS[k];
+  o.plan = NedloPlan.buildPlan({ start: PLAN_START, accomTotal: o.accomTotal });
+  o.months = o.plan.length;
+  // The first month's instalment (what is due now), kept in the fields the rest of the page uses
+  o.total = o.plan[0].due; o.accom = o.plan[0].accom; o.reg = o.plan[0].reg;
+});
+// Group a plan into runs of months with the same make-up, e.g. "R4,094.29 × 2 (Nov–Dec 2026)"
+function planPhases(plan){
+  const phases = [];
+  plan.forEach(r=>{
+    const withReg = r.reg > 0, last = phases[phases.length-1];
+    if(last && last.withReg === withReg) last.rows.push(r); else phases.push({ withReg, rows:[r] });
+  });
+  return phases.map(p=>({ from:p.rows[0].month, to:p.rows[p.rows.length-1].month, n:p.rows.length, amount:p.rows[0].due }));
+}
+function phaseText(ph){
+  if(ph.n === 1) return `${fmt(ph.amount)} in ${monthLabel(ph.from)}`;
+  return `${fmt(ph.amount)} × ${ph.n} (${monthLabel(ph.from).slice(0,3)}–${monthLabel(ph.to)})`;
+}
+// Month-by-month table: what is due each month (registration + accommodation)
+function scheduleTableHtml(plan, regOnly){
+  const th = 'padding:5px 8px;text-align:right;';
+  const td = 'padding:4px 8px;border-bottom:1px solid #e5e7eb;text-align:right;';
+  let h = `<div class="table-wrap"><table style="width:100%;font-size:12px;border-collapse:collapse;"><thead><tr style="background:#1a3a6b;color:#fff;">
+    <th style="padding:5px 8px;text-align:left;">Month</th><th style="${th}">Registration</th>${regOnly?'':`<th style="${th}">Accommodation</th>`}<th style="${th}">Amount due</th></tr></thead><tbody>`;
+  plan.forEach(r=>{
+    h += `<tr><td style="padding:4px 8px;border-bottom:1px solid #e5e7eb;">${monthLabel(r.month)}</td>
+      <td style="${td}">${r.reg>0?fmt(r.reg):'—'}</td>${regOnly?'':`<td style="${td}">${r.accom>0?fmt(r.accom):'—'}</td>`}
+      <td style="${td}font-weight:700;">${fmt(r.due)}</td></tr>`;
+  });
+  h += `<tr style="background:#dbeafe;font-weight:700;"><td style="padding:5px 8px;">TOTAL</td><td style="${th}">${fmt(NedloPlan.planRegTotal(plan))}</td>${regOnly?'':`<td style="${th}">${fmt(NedloPlan.planAccomTotal(plan))}</td>`}<td style="${th}">${fmt(NedloPlan.planTotal(plan))}</td></tr></tbody></table></div>`;
+  return h;
+}
 let selectedOpt = null;
 function fmt(n){ return 'R'+Number(n).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g,','); }
 function normalize(ref){ return (ref||'').toUpperCase().replace(/\s+/g,' ').trim(); }
@@ -279,20 +325,17 @@ const EXISTING_HOTEL_KEYS = ['OPT-1N','OPT-2N','OPT-3N','OPT-4N','OPT-5N','OPT-6
 function optIcon(o){ return o.regOnly?'📋':o.hotel.includes('Capital')?'🏨':o.hotel.includes('Catalyst')?'🏢':o.hotel.includes('Sun')?'☀️':o.hotel.includes('Tower')?'🏨':'🌿'; }
 function optPeriod(o){ return o.regOnly?'Oct–Dec 2026 (3 months)':'Oct 2026–May 2027 (8 months)'; }
 function optCard(key,o){
-  const totalCommit = r2(o.total*o.months);
-  const durationNote = o.regOnly
-    ? `${o.months} monthly payments of ${fmt(o.total)} (Oct–Dec 2026)`
-    : `${o.months} monthly payments of ${fmt(o.total)} (Oct 2026 – May 2027)`;
+  const totalCommit = NedloPlan.planTotal(o.plan);
+  const planLine = planPhases(o.plan).map(phaseText).join(' · then ');
   return `<div class="option-card" id="opt-${key}" onclick="selectOption('${key}')">
     <div class="hotel">${optIcon(o)} ${o.hotel}</div>
     <div class="type">${o.type}</div>
-    <div class="price">${fmt(o.total)}/mo</div>
-    <div style="font-size:11px;color:var(--muted);margin-top:4px;">${o.regOnly?'Registration only':'Accom: '+fmt(o.accom)+'/mo + Reg: '+fmt(o.reg)+'/mo'}</div>
+    <div class="price">${fmt(o.plan[0].due)}<div style="font-size:10px;font-weight:600;color:var(--muted);">due this month</div></div>
     <div style="font-size:11.5px;color:var(--primary);font-weight:600;margin-top:6px;padding-top:6px;border-top:1px dashed #e5e7eb;">
       💰 Total commitment: ${fmt(totalCommit)}
-      ${o.regOnly?'':`<span style="color:var(--muted);font-weight:400;"> (Accommodation ${fmt(r2(o.accom*o.months))} + Registration ${fmt(REG_TOTAL)})</span>`}
+      ${o.regOnly?'':`<span style="color:var(--muted);font-weight:400;"> (Accommodation ${fmt(o.accomTotal)} + Registration ${fmt(REG_TOTAL)})</span>`}
     </div>
-    <div style="font-size:11px;color:var(--muted);margin-top:2px;">📅 ${durationNote}</div>
+    <div style="font-size:11px;color:var(--muted);margin-top:2px;">📅 ${planLine}</div>
     ${o.regOnly?'':`<div style="font-size:11px;color:var(--primary);font-weight:600;margin-top:2px;">🛏 Booking: 5 days / 4 nights</div>`}
   </div>`;
 }
@@ -302,7 +345,7 @@ const list = document.getElementById('options-list');
 const sortedKeys = Object.keys(OPTIONS).sort((a,b)=>{
   if(OPTIONS[a].regOnly) return -1;   // Registration Only always first
   if(OPTIONS[b].regOnly) return 1;
-  return OPTIONS[a].total - OPTIONS[b].total; // then cheapest monthly first
+  return OPTIONS[a].accomTotal - OPTIONS[b].accomTotal; // then cheapest first (lowest accommodation cost)
 });
 let listHtml = '';
 sortedKeys.forEach(key=>{ listHtml += optCard(key, OPTIONS[key]); });
@@ -319,11 +362,17 @@ function selectOption(key){
   document.getElementById('s-hotel').textContent=`${o.hotel} – ${o.type}`;
   // The 5 days / 4 nights booking line only applies to hotel options (not Registration Only)
   document.getElementById('s-nights-row').style.display = o.regOnly ? 'none' : '';
-  document.getElementById('s-reg').textContent=fmt(o.reg);
-  document.getElementById('s-accom').textContent=fmt(o.accom);
-  document.getElementById('s-total').textContent=fmt(o.total);
-  document.getElementById('s-total12').textContent=fmt(o.total*o.months)+' ('+o.months+' months)';
-  const pEl=document.getElementById('s-period'); if(pEl) pEl.textContent = o.regOnly ? 'October – December 2026' : 'October 2026 – May 2027';
+  const regRows = o.plan.filter(r=>r.reg>0), accRows = o.plan.filter(r=>r.accom>0);
+  const span = a => a.length>1 ? `${monthLabel(a[0].month)} – ${monthLabel(a[a.length-1].month)}` : monthLabel(a[0].month);
+  document.getElementById('s-reg').textContent = regRows.length>1
+    ? `${fmt(NedloPlan.planRegTotal(o.plan))} in ${regRows.length} payments (${span(regRows)})`
+    : `${fmt(NedloPlan.planRegTotal(o.plan))} due in full in ${monthLabel(regRows[0].month)}`;
+  document.getElementById('s-accom').textContent = o.regOnly ? '—'
+    : `${fmt(o.accomTotal)} in ${accRows.length} payment${accRows.length===1?'':'s'} (${span(accRows)})`;
+  document.getElementById('s-total').textContent = fmt(o.plan[0].due);
+  document.getElementById('s-total12').textContent = fmt(NedloPlan.planTotal(o.plan))+' ('+o.plan.length+' payment'+(o.plan.length===1?'':'s')+')';
+  const pEl=document.getElementById('s-period'); if(pEl) pEl.textContent = span(o.plan);
+  document.getElementById('s-schedule').innerHTML = scheduleTableHtml(o.plan, o.regOnly);
   // Generate reference
   const name=document.getElementById('r-name').value.trim();
   const conf=document.getElementById('r-conf').value;
@@ -383,12 +432,12 @@ async function submitRegistration(){
     email:email, phone:phone, accommodationOption:selectedOpt,
     expectedMonthlyTotal:o.total, expectedAccom:o.accom, expectedReg:o.reg,
     paymentRef:ref, registrationDate:new Date().toISOString().split('T')[0],
-    cohort:'new',   // all public (new) registrations use the 8-month / 3-month schedule
+    cohort:'new',   // the server builds the member's payment plan itself (its own date and prices)
     isClergy: document.getElementById('r-clergy').value === 'yes'
   };
 
-  // Build member with ledger for the correct schedule (3 months reg-only, else 8 months)
-  const MONTHS = o.regOnly ? SCHED_REGONLY : SCHED_NEW;
+  // Ledger months follow the member's plan (the server rebuilds this as well)
+  const MONTHS = o.plan.map(r=>r.month);
   member.id='ID-'+Math.random().toString(36).substr(2,9).toUpperCase();
   member.ledger={};
   MONTHS.forEach(mk=>{member.ledger[mk]={status:'NOT_PAID',entryId:null,received:0,accom:0,reg:0};});
@@ -396,6 +445,7 @@ async function submitRegistration(){
   // Save via API (falls back to localStorage if API unavailable)
   const btn = document.querySelector('.btn-primary');
   if(btn){ btn.disabled=true; btn.textContent='Submitting…'; }
+  let serverData = null;   // what the server actually recorded (including the payment plan it built)
   try{
     const res = await fetch('/api/register', {
       method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(member)
@@ -407,6 +457,7 @@ async function submitRegistration(){
       return;
     }
     if(!res.ok){ throw new Error('Server error'); }
+    serverData = await res.json().catch(()=>null);
   }catch(e){
     // Registration must reach the server (so it writes to the portal and the
     // confirmation email can be sent). Show an error and let the user retry.
@@ -416,7 +467,9 @@ async function submitRegistration(){
     return;
   }
 
-  // Show success (the server records the member and emails a confirmation)
+  // Show success (the server records the member and emails a confirmation).
+  // Use the plan the SERVER recorded, so the screen always matches the email and the portal.
+  const plan = (serverData && Array.isArray(serverData.plan) && serverData.plan.length) ? serverData.plan : o.plan;
   document.getElementById('reg-form').classList.add('hidden');
   document.getElementById('reg-success').classList.remove('hidden');
   document.getElementById('success-summary').innerHTML=`
@@ -426,11 +479,13 @@ async function submitRegistration(){
         <tr><td>Conference</td><td class="val">${conf}</td></tr>
         <tr><td>Option</td><td class="val">${selectedOpt} – ${o.hotel+' ('+o.type+')'}</td></tr>
         ${o.regOnly?'':'<tr><td>Booking</td><td class="val">5 days / 4 nights</td></tr>'}
-        <tr><td>Monthly Payment</td><td class="val">${fmt(o.total)}</td></tr>
-        <tr><td>Total Commitment</td><td class="val" style="font-weight:700;">${fmt(r2(o.total*o.months))} (${o.months} months)</td></tr>
+        <tr><td>First payment (due this month)</td><td class="val">${fmt(plan[0].due)}</td></tr>
+        <tr><td>Total Commitment</td><td class="val" style="font-weight:700;">${fmt(NedloPlan.planTotal(plan))} (${plan.length} payment${plan.length===1?'':'s'})</td></tr>
         <tr><td>Payment Reference</td><td class="val" style="color:var(--primary);font-size:15px;">${ref}</td></tr>
       </table>
     </div>
+    <div style="font-weight:700;color:var(--primary);margin:14px 0 6px;font-size:13px;">Your payment schedule</div>
+    <div style="margin-bottom:12px;">${scheduleTableHtml(plan, o.regOnly)}</div>
     <div class="bank-box">
       <div style="font-weight:700;color:var(--primary);margin-bottom:8px;">Banking Details</div>
       <table>

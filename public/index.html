@@ -6,12 +6,13 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<title>NEDLO Biennial 2027 – Stokvel Fund Reconciliation Tool v4.9-build33</title>
+<title>NEDLO Biennial 2027 – Stokvel Fund Reconciliation Tool v5.0-build34</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 <script src="api-adapter.js"></script>
+<script src="plan.js"></script>
 <style>
 :root{
   --primary:#1a3a6b;--primary-light:#2456a4;--accent:#c8a951;
@@ -137,7 +138,7 @@ select[multiple]{height:auto;min-height:80px;}
       </select>
     </div>
     <button class="btn btn-primary" style="width:100%;justify-content:center;padding:12px;" onclick="doLogin()">Sign In</button>
-    <p style="text-align:center;margin-top:14px;font-size:11px;color:var(--muted);">Protected under POPIA. Authorised personnel only. <strong>v4.9-build33</strong></p>
+    <p style="text-align:center;margin-top:14px;font-size:11px;color:var(--muted);">Protected under POPIA. Authorised personnel only. <strong>v5.0-build34</strong></p>
     <p style="text-align:center;margin-top:6px;font-size:11px;"><a href="/help" style="color:var(--primary);font-weight:600;text-decoration:none;">❓ Need help? Read the guide</a></p>
   </div>
 </div>
@@ -182,6 +183,11 @@ select[multiple]{height:auto;min-height:80px;}
       <div class="card" id="dashboard-targets-card">
         <div class="card-title">🎯 Delegate Targets by Conference</div>
         <div id="dashboard-targets"></div>
+      </div>
+      <div class="card" id="dashboard-compliance-card">
+        <div class="card-title">💳 Paying Delegates vs Target (live)</div>
+        <div class="text-muted" style="font-size:12px;margin-bottom:8px;">Registrations only count towards the target once they are actually paying. A member is <strong>paying</strong> when what they have paid covers what was due up to this month. <strong>Behind</strong> = paid something but less than due to date. <strong>Not paying</strong> = nothing paid although a payment is due.</div>
+        <div id="dashboard-compliance"></div>
       </div>
       <div id="dashboard-period-alert"></div>
       <div class="card" id="dashboard-credit-card" style="display:none;border-left:4px solid var(--info);">
@@ -807,18 +813,125 @@ const QUARTERS = {
   Q4:['2027-03','2027-04','2027-05'],
 };
 
+// ── Dynamic-schedule members ──
+// Members who registered under the dynamic-schedule rules carry their own month-by-month plan
+// (member.plan = [{month, reg, accom, due}]). Everyone else keeps the flat monthly schedule.
+function memberPlan(m){ return (m && Array.isArray(m.plan) && m.plan.length) ? m.plan : null; }
+// What a member owes for ONE month: from their plan, or the flat monthly amount for everyone else.
+function dueForMonth(m, mk){
+  const p = memberPlan(m);
+  if(p){ const r = p.find(x=>x.month===mk); return r ? r.due : 0; }
+  return m.expectedMonthlyTotal;
+}
+// Rebuild a plan member's ledger (and how each payment splits between registration and
+// accommodation) from the payments matched to them, filling months in order.
+function rebuildPlanLedger(m){
+  const p = memberPlan(m); if(!p) return;
+  m.ledger = {};
+  p.forEach(r=>{ m.ledger[r.month] = { status:'NOT_PAID', entryId:null, received:0, accom:0, reg:0 }; });
+  const entries = dedupeEntries(DB.entries.filter(e=>e.linkedMemberId===m.id && e.matchStatus==='MATCHED'))
+    .sort((a,b)=>a.txnDate.localeCompare(b.txnDate));
+  const cover = NedloPlan.coveringPayment(p, entries.map(e=>Number(e.creditAmount)));
+  p.forEach((r,i)=>{
+    if(cover[i] === -1) return;
+    m.ledger[r.month] = { status:'PAID', entryId: entries[cover[i]].id, received: r.due, accom: r.accom, reg: r.reg };
+  });
+  // Each payment's split between registration and accommodation = what it added to the plan
+  const split = paid => { const a = NedloPlan.allocate(p, paid); return { reg: a.rows.reduce((s,x)=>s+x.paidReg,0), accom: a.rows.reduce((s,x)=>s+x.paidAccom,0) }; };
+  let before = 0;
+  entries.forEach(e=>{
+    const after = NedloPlan.r2(before + Number(e.creditAmount));
+    const b = split(before), a = split(after);
+    e.allocatedReg = NedloPlan.r2(a.reg - b.reg);
+    e.allocatedAccom = NedloPlan.r2(Number(e.creditAmount) - e.allocatedReg);   // anything beyond the plan counts as accommodation/credit
+    before = after;
+  });
+}
+
+// ── Payment standing of one member right now ──
+// Returns { state: 'FULL'|'PAYING'|'BEHIND'|'NOT_PAYING', paid, dueToDate }
+function memberStanding(m){
+  const paid = memberPaid(m.id);
+  if(OPTIONS[m.accommodationOption]?.flexAmount) return { state: paid>0 ? 'PAYING' : 'NOT_PAYING', paid, dueToDate: 0 };
+  const total = memberExpectedTotal(m);
+  const dueToDate = parseFloat(memberElapsed(m).reduce((s,mk)=>s+dueForMonth(m,mk),0).toFixed(2));
+  if(total>0 && paid >= total-0.05) return { state:'FULL', paid, dueToDate };
+  if(dueToDate<=0.05)               return { state:'PAYING', paid, dueToDate };   // nothing due yet
+  if(paid >= dueToDate-0.05)        return { state:'PAYING', paid, dueToDate };
+  if(paid > 0.05)                   return { state:'BEHIND', paid, dueToDate };
+  return { state:'NOT_PAYING', paid, dueToDate };
+}
+// Live table: per conference, how many of the registered members are really paying vs the target
+function renderTargetCompliance(){
+  const el = document.getElementById('dashboard-compliance'); if(!el) return;
+  const rows = [];
+  const tally = members => {
+    const t = { reg:members.length, full:0, paying:0, behind:0, none:0, paid:0, due:0 };
+    members.forEach(m=>{
+      const s = memberStanding(m);
+      t.paid += Math.min(s.paid, s.dueToDate); t.due += s.dueToDate;
+      if(s.state==='FULL') t.full++; else if(s.state==='PAYING') t.paying++; else if(s.state==='BEHIND') t.behind++; else t.none++;
+    });
+    t.ok = t.full + t.paying;
+    return t;
+  };
+  CONF_CODES.forEach(c=>{ rows.push({ code:c, name:CONF_NAMES[c]||'', target:CONF_TARGETS[c]||0, t:tally(DB.members.filter(m=>m.conferenceCode===c)) }); });
+  const all = DB.members.filter(m=>CONF_CODES.includes(m.conferenceCode));
+  const bar = (pct)=>`<div style="display:flex;align-items:center;gap:6px;"><div style="flex:1;background:#e5e7eb;border-radius:4px;height:8px;min-width:70px;"><div style="width:${Math.min(100,pct)}%;background:${pct>=100?'var(--success)':pct>=50?'var(--warning)':'var(--danger)'};height:8px;border-radius:4px;"></div></div><span style="font-size:11px;font-weight:700;">${pct}%</span></div>`;
+  const line = (label, name, target, t, style)=>{
+    const pct = target>0 ? Math.round(t.ok/target*100) : 0;
+    const coll = t.due>0 ? Math.round(Math.min(t.paid,t.due)/t.due*100) : 100;
+    return `<tr style="${style||''}">
+      <td>${label}</td><td>${name}</td>
+      <td class="text-right">${target||'—'}</td>
+      <td class="text-right">${t.reg}</td>
+      <td class="text-right font-bold" style="color:var(--success);">${t.ok}</td>
+      <td class="text-right" style="color:${t.behind?'var(--warning)':'var(--muted)'};font-weight:${t.behind?700:400};">${t.behind}</td>
+      <td class="text-right" style="color:${t.none?'var(--danger)':'var(--muted)'};font-weight:${t.none?700:400};">${t.none}</td>
+      <td class="text-right" style="color:${target-t.ok>0?'var(--danger)':'var(--success)'};font-weight:700;">${target? (target-t.ok>0 ? '-'+(target-t.ok) : '+'+(t.ok-target)) : '—'}</td>
+      <td style="min-width:150px;">${target? bar(pct) : '—'}</td>
+      <td class="text-right" title="Paid vs due up to this month">${t.due>0? coll+'%' : '—'}</td>
+    </tr>`;
+  };
+  let html = `<div class="table-wrap"><table><thead><tr>
+    <th>Conference</th><th>Name</th><th class="text-right">Target</th><th class="text-right">Registered</th>
+    <th class="text-right">Paying</th><th class="text-right">Behind</th><th class="text-right">Not paying</th>
+    <th class="text-right">Gap to target</th><th>Paying vs target</th><th class="text-right">Collected vs due</th></tr></thead><tbody>`;
+  rows.forEach(r=>{ html += line(`<span class="badge" style="background:#dbeafe;color:#1e40af;">${r.code}</span>`, r.name, r.target, r.t); });
+  const tot = tally(all);
+  const totTarget = CONF_CODES.reduce((s,c)=>s+(CONF_TARGETS[c]||0),0);
+  html += line('<strong>TOTAL</strong>', `<em>${all.length} members</em>`, totTarget, tot, 'background:#dbeafe;font-weight:700;');
+  const clergy = DB.members.filter(m=>m.isClergy);
+  html += line('<span class="badge" style="background:#ede9fe;color:#6d28d9;">CLERGY</span>', 'Clergy delegates', CLERGY_TARGET, tally(clergy), 'background:#f5f3ff;');
+  html += '</tbody></table></div>';
+  html += `<div class="text-muted" style="font-size:11px;margin-top:6px;">Updates automatically whenever payments are matched, allocated or removed. Paying = fully paid + up to date. "Collected vs due" compares rand paid with rand due up to ${monthLabel(currentMonthKey())}.</div>`;
+  el.innerHTML = html;
+}
+
 // ── Per-member schedule ──
 function memberSchedule(m){
+  const plan = memberPlan(m);
+  if(plan) return plan.map(r=>r.month);
   const opt = OPTIONS[m.accommodationOption];
   if(opt && opt.scheduleKey==='regonly') return SCHEDULES.regonly.months;
   if(m.cohort === 'new') return SCHEDULES.new.months;
   return SCHEDULES.legacy.months;
 }
 function memberMonths(m){ return memberSchedule(m).length; }
+// Registration / accommodation commitment totals (plan-aware)
+function memberRegTotal(m){
+  if(memberPlan(m)) return NedloPlan.planRegTotal(memberPlan(m));
+  return parseFloat((m.expectedReg * memberMonths(m)).toFixed(2));
+}
+function memberAccomTotal(m){
+  if(memberPlan(m)) return NedloPlan.planAccomTotal(memberPlan(m));
+  return parseFloat((m.expectedAccom * memberMonths(m)).toFixed(2));
+}
 // Full expected commitment for a member (monthly × their number of months)
 function memberExpectedTotal(m){
   const opt = OPTIONS[m.accommodationOption];
   if(opt?.flexAmount) return 0;
+  if(memberPlan(m)) return NedloPlan.planTotal(memberPlan(m));
   return parseFloat((m.expectedMonthlyTotal * memberMonths(m)).toFixed(2));
 }
 // Elapsed months WITHIN a member's own schedule (for compliance calcs)
@@ -1093,6 +1206,7 @@ function updateAllMemberRates(){
   DB.members.forEach(m=>{
     const o = OPTIONS[m.accommodationOption];
     if(!o) return;
+    if(memberPlan(m)) return; // dynamic-plan members keep their own stored plan
     if(o.flexAmount) return; // skip flex members
     // Only members on the new-option codes get auto-synced to the OPTIONS_NEW rates.
     // Includes the OPT-xN existing-hotel new-cohort codes; legacy OPT-1..6 stay locked.
@@ -1128,6 +1242,7 @@ const ACCOM_4NIGHT = {
 // respecting their cohort schedule. Returns null if the option has no accom mapping
 // or the member is flex/once-off (excluded).
 function compute4NightFigures(m){
+  if(memberPlan(m)) return null; // plan members already carry 4-night totals
   const opt = OPTIONS[m.accommodationOption];
   if(!opt || opt.flexAmount || opt.onceOff) return null;
   if(!(m.accommodationOption in ACCOM_4NIGHT)) return null;
@@ -1519,6 +1634,17 @@ function saveMember(){
       expectedMonthlyTotal:o.total, expectedAccom:o.accom, expectedReg:o.reg,
       paymentRef:ref, isClergy: document.getElementById('m-clergy').value === 'yes',
       cohort: old.cohort || (isNewOption ? 'new' : 'legacy') };
+    if(memberPlan(old)){
+      // Plan member: keep their own schedule. If the option changed, rebuild the plan from
+      // their original start month using the 4-night totals.
+      const mm = DB.members[idx];
+      if(opt !== old.accommodationOption && (opt in ACCOM_4NIGHT)){
+        mm.plan = NedloPlan.buildPlan({ start: old.plan[0].month, accomTotal: ACCOM_4NIGHT[opt] });
+      } else { mm.plan = old.plan; }
+      const f = mm.plan[0];
+      mm.expectedMonthlyTotal = f.due; mm.expectedAccom = f.accom; mm.expectedReg = f.reg;
+      rebuildPlanLedger(mm);
+    }
     auditLog('MemberEdit', 'Edited member '+ref);
   } else {
     const newM = {
@@ -1558,6 +1684,12 @@ function viewMemberLedger(id){
 function forcRecalcLedger(){
   if(!ledgerMemberId) return;
   const m = DB.members.find(x=>x.id===ledgerMemberId); if(!m) return;
+  if(memberPlan(m)){
+    rebuildPlanLedger(m);
+    saveDB(); renderLedgerBody(m); renderDashboard();
+    auditLog('LedgerRecalc',`Recalculated ledger for ${m.paymentRef}`);
+    return;
+  }
   // Reset ledger (member's own schedule)
   m.ledger={};
   const sched = memberSchedule(m);
@@ -1620,7 +1752,7 @@ function renderLedgerBody(m){
     const isPaid=slot?.status==='PAID';
     html+=`<tr style="background:${isPaid?'#f0fdf4':slot?.status==='NOT_PAID'?'#fef2f2':'#fafafa'}">
       <td>${mo.label}</td>
-      <td class="text-right">${isFlexAmount?'Flex':fmt(m.expectedMonthlyTotal)}</td>
+      <td class="text-right">${isFlexAmount?'Flex':fmt(dueForMonth(m, mo.key))}</td>
       <td class="text-right font-bold">${slot?.received?fmt(slot.received):'—'}</td>
       <td class="text-right">${slot?.accom?fmt(slot.accom):'—'}</td>
       <td class="text-right">${slot?.reg?fmt(slot.reg):'—'}</td>
@@ -1969,6 +2101,7 @@ async function executeMerge(){
   DB.members = DB.members.filter(x=>x.id!==target.id);
   
   // Recalculate primary's ledger (its own schedule)
+  if(memberPlan(primary)) rebuildPlanLedger(primary);
   const pSched = memberSchedule(primary);
   primary.ledger={};
   pSched.forEach(mk=>{ primary.ledger[mk]={status:'NOT_PAID',entryId:null,received:0,accom:0,reg:0}; });
@@ -2083,7 +2216,7 @@ function renderMembersTable(){
       <td><span class="badge" style="background:#dbeafe;color:#1e40af;">${m.conferenceCode}</span></td>
       <td>${m.localChurch||'—'}</td>
       <td>${m.accommodationOption}${isOnceOff?' (Once Off)':''} ${(m.cohort==='new')?'<span class="badge" style="background:#dcfce7;color:#15803d;font-size:9px;">NEW</span>':'<span class="badge" style="background:#f1f5f9;color:#64748b;font-size:9px;">LEG</span>'}</td>
-      <td class="text-right">${isOnceOff ? fmt(m.expectedMonthlyTotal)+' (total)' : fmt(m.expectedMonthlyTotal)+'/mo'}</td>
+      <td class="text-right">${memberPlan(m) ? fmt(m.expectedMonthlyTotal)+' <span class="badge" style="background:#fef3c7;color:#92400e;font-size:9px;" title="Joined '+m.plan[0].month+'. Custom schedule of '+m.plan.length+' months, total '+fmt(NedloPlan.planTotal(m.plan))+'">1st · PLAN</span>' : isOnceOff ? fmt(m.expectedMonthlyTotal)+' (total)' : fmt(m.expectedMonthlyTotal)+'/mo'}</td>
       <td class="text-right">${fmt(m.expectedAccom)}</td>
       <td class="text-right">${fmt(m.expectedReg)}${isOnceOff?' (×12)':''}</td>
       <td>${m.email||'—'}</td>
@@ -2360,8 +2493,10 @@ function confirmImportMembers(){
       existing.localChurch=mapped.church||existing.localChurch||'';
       existing.email=mapped.email||existing.email||'';
       existing.phone=mapped.phone||existing.phone||'';
-      existing.accommodationOption=opt;
-      existing.expectedMonthlyTotal=o.total; existing.expectedAccom=o.accom; existing.expectedReg=o.reg;
+      if(!memberPlan(existing)){   // plan members keep their own option and schedule
+        existing.accommodationOption=opt;
+        existing.expectedMonthlyTotal=o.total; existing.expectedAccom=o.accom; existing.expectedReg=o.reg;
+      }
       updated++;
     } else {
       if(DB.members.length>=500){ errors.push('Row '+(i+1)+': member limit 500 reached'); return; }
@@ -3114,7 +3249,8 @@ function matchEntry(entry){
         entry.matchStatus='DUPLICATE'; entry.linkedMemberId=member.id; return;
       }
     }
-  } else {
+  } else if(!memberPlan(member)) {
+    // (plan members skip this: their payments simply accumulate against their plan)
     // For monthly payments: if this month already paid, find next unpaid month
     const existingMatched = DB.entries.find(e=>
       e.id!==entry.id && e.linkedMemberId===member.id &&
@@ -3160,6 +3296,12 @@ function matchEntry(entry){
 }
 
 function allocateEntry(entry, member, amount){
+  if(memberPlan(member)){
+    // entry is already MATCHED to this member by the caller; rebuild the plan ledger
+    entry.matchStatus='MATCHED'; entry.linkedMemberId=member.id;
+    rebuildPlanLedger(member);
+    return;
+  }
   const isFlexAmount = OPTIONS[member.accommodationOption]?.flexAmount;
   const expected = member.expectedMonthlyTotal;
   
@@ -3272,6 +3414,7 @@ function recalcAllLedgers(){
   let count=0;
   DB.members.forEach(m=>{
     const o = OPTIONS[m.accommodationOption]; if(!o) return;
+    if(memberPlan(m)){ rebuildPlanLedger(m); count++; return; }
     const isFlexAmount = o.flexAmount;
     const expected = m.expectedMonthlyTotal;
     // Reset ledger (member's own schedule)
@@ -3535,6 +3678,7 @@ function removeAllDuplicates(){
 function recalcLedgerForMember(memberId){
   const m = DB.members.find(x=>x.id===memberId); if(!m) return;
   const o = OPTIONS[m.accommodationOption]; if(!o) return;
+  if(memberPlan(m)){ rebuildPlanLedger(m); return; }
   const isFlexAmount = o.flexAmount;
   const expected = m.expectedMonthlyTotal;
   const sched = memberSchedule(m);
@@ -3914,7 +4058,7 @@ function renderDashboard(){
     const mElapsed = memberElapsed(m);
     mElapsed.forEach(mk=>{
       const slot=m.ledger?.[mk];
-      const exp=m.expectedMonthlyTotal;
+      const exp=dueForMonth(m, mk);
       totalExpected += exp;
       if(slot?.status==='PAID'){ totalReceivedLedger+=slot.received||0; }
       else missed++;
@@ -4092,6 +4236,7 @@ function renderDashboard(){
     tgtHtml+=`<div class="alert alert-warn mt-2" style="font-size:12px;">⚠️ ${unassigned.length} member(s) have an unrecognized or blank conference code and are not counted in any conference. Edit these members to assign a valid conference (ECLO, NCLO, WCLO, OCLO, MMMCLO).</div>`;
   }
   document.getElementById('dashboard-targets').innerHTML = tgtHtml;
+  renderTargetCompliance();
 
   // STD-001 period alert
   const now=currentMonthKey();
@@ -4113,7 +4258,7 @@ function renderDashboard(){
     cg.members++;
     memberElapsed(m).forEach(mk=>{
       const slot=m.ledger?.[mk];
-      cg.excTotal+=m.expectedMonthlyTotal;
+      cg.excTotal+=dueForMonth(m, mk);
       if(slot?.status==='PAID'){ cg.paid++; cg.recTotal+=slot.received; }
       else cg.missed++;
     });
@@ -4171,7 +4316,7 @@ function renderConferenceBreakdown(){
       optCounts[m.accommodationOption] = (optCounts[m.accommodationOption]||0) + 1;
       let hasPaidAny = false;
       memberElapsed(m).forEach(mk=>{
-        totalExpected += m.expectedMonthlyTotal;
+        totalExpected += dueForMonth(m, mk);
         const slot = m.ledger?.[mk];
         if(slot?.status==='PAID'){ totalReceived += slot.received; hasPaidAny=true; }
       });
@@ -4264,7 +4409,7 @@ function runMonthlyReport(){
   members.forEach(m=>{
     // Only count members whose own schedule includes this month
     if(!memberSchedule(m).includes(mk)) return;
-    totExpected+=m.expectedMonthlyTotal;
+    totExpected+=dueForMonth(m, mk);
     const slot=m.ledger?.[mk];
     if(slot?.status==='PAID'){ totReceived+=slot.received||0; totAccom+=slot.accom||0; totReg+=slot.reg||0; paidCount++; }
   });
@@ -4290,7 +4435,7 @@ function runMonthlyReport(){
       <td>${m.paymentRef}</td><td>${m.fullName}</td>
       <td><span class="badge" style="background:#dbeafe;color:#1e40af;">${m.conferenceCode}</span></td>
       <td>${m.accommodationOption}</td>
-      <td class="text-right">${fmt(m.expectedMonthlyTotal)}</td>
+      <td class="text-right">${fmt(dueForMonth(m, mk))}</td>
       <td class="text-right">${slot.received?fmt(slot.received):'R0.00'}</td>
       <td class="text-right">${slot.accom?fmt(slot.accom):'R0.00'}</td>
       <td class="text-right">${slot.reg?fmt(slot.reg):'R0.00'}</td>
@@ -4363,7 +4508,7 @@ function runQuarterlyReport(){
     months.forEach(mk=>{
       if(!mSchedSet.has(mk)) return; // month not in member's schedule
       mthsExpected++;
-      exp+=m.expectedMonthlyTotal;
+      exp+=dueForMonth(m, mk);
       const slot=m.ledger?.[mk];
       if(slot?.status==='PAID'){ mthsPaid++; accomRec+=slot.accom||0; regRec+=slot.reg||0; }
     });
@@ -4443,8 +4588,8 @@ function runYTDReport(){
     }
     const isFlexAmount = OPTIONS[m.accommodationOption]?.flexAmount;
     const nMo = memberMonths(m);
-    const totalReg12 = isFlexAmount ? 0 : parseFloat((m.expectedReg * nMo).toFixed(2));
-    const totalAccom12 = isFlexAmount ? 0 : parseFloat((m.expectedAccom * nMo).toFixed(2));
+    const totalReg12 = isFlexAmount ? 0 : memberRegTotal(m);
+    const totalAccom12 = isFlexAmount ? 0 : memberAccomTotal(m);
     const totalExp12 = isFlexAmount ? 0 : memberExpectedTotal(m);
     const mSchedSet = new Set(memberSchedule(m));
     
@@ -4507,8 +4652,8 @@ function runYTDReport(){
   const grandPct = grandTotalExp>0?((grandTotalPaid/grandTotalExp)*100).toFixed(1):'0.0';
   html+=`<tr class="subtotal-row">
     <td colspan="6">GRAND TOTAL (${members.length} members)</td>
-    <td class="text-right">${fmt(members.reduce((s,m)=>s+(OPTIONS[m.accommodationOption]?.flexAmount?0:m.expectedReg*memberMonths(m)),0))}</td>
-    <td class="text-right">${fmt(members.reduce((s,m)=>s+(OPTIONS[m.accommodationOption]?.flexAmount?0:m.expectedAccom*memberMonths(m)),0))}</td>
+    <td class="text-right">${fmt(members.reduce((s,m)=>s+(OPTIONS[m.accommodationOption]?.flexAmount?0:memberRegTotal(m)),0))}</td>
+    <td class="text-right">${fmt(members.reduce((s,m)=>s+(OPTIONS[m.accommodationOption]?.flexAmount?0:memberAccomTotal(m)),0))}</td>
     <td class="text-right font-bold">${fmt(grandTotalExp)}</td>
     <td colspan="12"></td>
     <td class="text-right font-bold" style="color:var(--success);">${fmt(grandTotalPaid)}</td>
@@ -4987,8 +5132,18 @@ function buildWhatsappText(m){
   lines.push('• Option: '+m.accommodationOption+(opt.hotel&&opt.hotel!=='N/A'?' – '+opt.hotel+' ('+opt.type+')':''));
   if(hasHotelStay(opt)) lines.push('• Booking: '+STAY_LABEL);
   if(!isFlex){
-    lines.push('• Monthly instalment: '+fmt(m.expectedMonthlyTotal));
-    lines.push('• Total commitment ('+nMo+' months): '+fmt(totalExp));
+    if(memberPlan(m)){
+      const nowMk = currentMonthKey();
+      const cur = memberPlan(m).find(r=>r.month===nowMk);
+      const nxt = memberPlan(m).find(r=>r.month>=nowMk) || memberPlan(m)[memberPlan(m).length-1];
+      const mkLabel = k=>{ const [y,mm]=k.split('-'); return ['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][+mm]+' '+y; };
+      lines.push('• Your payment plan runs '+mkLabel(memberPlan(m)[0].month)+' to '+mkLabel(memberPlan(m)[memberPlan(m).length-1].month));
+      lines.push('• Next instalment ('+mkLabel((cur||nxt).month)+'): '+fmt((cur||nxt).due));
+      lines.push('• Total commitment ('+memberPlan(m).length+' months): '+fmt(totalExp));
+    } else {
+      lines.push('• Monthly instalment: '+fmt(m.expectedMonthlyTotal));
+      lines.push('• Total commitment ('+nMo+' months): '+fmt(totalExp));
+    }
   }
   lines.push('• Total received to date: '+fmt(paid));
   if(!isFlex) lines.push('• Balance outstanding: '+(outstanding<=0.05?'NIL – FULLY PAID':fmt(outstanding)));
@@ -5029,8 +5184,8 @@ function generateLetterHTML(memberId, forEmail=false){
   const nMo = memberMonths(m);
   const mSched = memberSchedule(m);
   const totalExpected12 = isFlexAmount ? 0 : memberExpectedTotal(m);
-  const totalAccom12   = isFlexAmount ? 0 : parseFloat((m.expectedAccom * nMo).toFixed(2));
-  const totalReg12     = isFlexAmount ? 0 : parseFloat((m.expectedReg * nMo).toFixed(2));
+  const totalAccom12   = isFlexAmount ? 0 : memberAccomTotal(m);
+  const totalReg12     = isFlexAmount ? 0 : memberRegTotal(m);
   const letterDate = document.getElementById('comms-date')?.value || new Date().toLocaleDateString('en-ZA',{day:'2-digit',month:'long',year:'numeric'});
   const deadline   = document.getElementById('comms-deadline')?.value || '31 May 2027';
   const finsecName  = document.getElementById('comms-finsec-name')?.value || 'Mr Dumisani Mphasane';
@@ -5054,9 +5209,37 @@ function generateLetterHTML(memberId, forEmail=false){
   const actualTotalPaid = uniqueEntries.reduce((s,e)=>s+e.creditAmount, 0);
 
   const letterMonthLabel = (k)=>{ const [y,mm]=k.split('-'); return ['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][+mm]+' '+y; };
+  const planAlloc = memberPlan(m) ? NedloPlan.allocate(memberPlan(m), actualTotalPaid) : null;
   mSched.map(k=>({key:k,label:letterMonthLabel(k)})).forEach((mo, moIdx)=>{
     const isElapsed = elapsed.some(e=>e.key===mo.key);
     const slot = m.ledger?.[mo.key];
+    if(planAlloc){
+      // Dynamic-plan member: each month has its own amount due
+      const pr = planAlloc.rows[moIdx];
+      const cellStyle = 'padding:5px 8px;border-bottom:1px solid #e5e7eb;';
+      const isNow = mo.key <= currentMonthKey();
+      let pStatus='Not Yet Due', pBg='#fafafa', pColor='#6b7280', pDate='—';
+      if(pr.status==='PAID'){ pStatus='Received'; pBg='#f0fdf4'; pColor='#16a34a'; }
+      else if(pr.status==='PARTIAL'){ pStatus='Partially Paid'; pBg='#fefce8'; pColor='#b45309'; }
+      else if(isNow){ pStatus='Outstanding'; pBg='#fef2f2'; pColor='#dc2626'; }
+      if(pr.paid>0){
+        const ent = slot?.entryId ? DB.entries.find(e=>e.id===slot.entryId) : (uniqueEntries[uniqueEntries.length-1]||null);
+        pDate = ent?.txnDate || '—';
+      }
+      totalPaid += pr.paid; totalAccomPaid += pr.paidAccom; totalRegPaid += pr.paidReg;
+      scheduleRows+=`<tr style="background:${pBg};">
+      <td style="${cellStyle}">${mo.label}</td>
+      <td style="${cellStyle}text-align:right;">${fmt(pr.accom)}</td>
+      <td style="${cellStyle}text-align:right;">${fmt(pr.reg)}</td>
+      <td style="${cellStyle}text-align:right;font-weight:600;">${fmt(pr.due)}</td>
+      <td style="${cellStyle}text-align:right;">${pr.paid>0?fmt(pr.paidAccom):'—'}</td>
+      <td style="${cellStyle}text-align:right;">${pr.paid>0?fmt(pr.paidReg):'—'}</td>
+      <td style="${cellStyle}text-align:right;font-weight:600;">${pr.paid>0?fmt(pr.paid):'—'}</td>
+      <td style="${cellStyle}">${pDate}</td>
+      <td style="${cellStyle}font-weight:600;color:${pColor};">${pStatus}</td>
+    </tr>`;
+      return;
+    }
     const amtDueAccom = isFlexAmount ? '—' : fmt(m.expectedAccom);
     const amtDueReg   = isFlexAmount ? '—' : fmt(m.expectedReg);
     const amtDueTotal = isFlexAmount ? '—' : fmt(m.expectedMonthlyTotal);
@@ -5166,7 +5349,7 @@ function generateLetterHTML(memberId, forEmail=false){
   // Closing paragraph
   const closingParagraph = isFullyPaid
     ? `<p style="margin-bottom:16px;font-size:12px;color:#374151;">Your contributions are fully settled. We look forward to welcoming you to the <strong>40th Lay Biennial Convention</strong> in Sandton, South Africa, from <strong>8–11 August 2027</strong>. Should you have any queries, please do not hesitate to contact the Financial Secretary's office.</p>`
-    : `<p style="margin-bottom:12px;font-size:12px;color:#374151;">Please note that the due date for Biennial Registration is <strong>31 December 2026</strong>. This deadline is essential in order for us to proceed with registering members with CLO.</p>
+    : `<p style="margin-bottom:12px;font-size:12px;color:#374151;">Please note that the due date for Biennial Registration is ${(memberPlan(m) && mSched[0] > NedloPlan.REG_END) ? '<strong>'+letterMonthLabel(mSched[0])+'</strong> (due in full, as registration closed on 31 December 2026)' : '<strong>31 December 2026</strong>'}. This deadline is essential in order for us to proceed with registering members with CLO.</p>
        <p style="margin-bottom:12px;font-size:12px;color:#374151;">Furthermore, should the balance reflected above not be settled by <strong>${deadline}</strong>, your accommodation allocation for the Biennial Session may be affected.</p>
        <p style="margin-bottom:12px;font-size:12px;color:#374151;">If you have already made a payment that is not reflected here, or if you believe there is an error, kindly contact the Financial Secretary's office within <strong>seven (7) days</strong> of receiving this letter.</p>
        <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px;padding:12px 16px;margin-bottom:14px;">
@@ -5209,9 +5392,14 @@ function generateLetterHTML(memberId, forEmail=false){
         <tr><td style="color:#6b7280;padding:2px 0;width:230px;">Accommodation Option</td><td><strong>${optLabel}</strong></td></tr>
         <tr><td style="color:#6b7280;padding:2px 0;">Hotel / Room Type</td><td>${opt.hotel&&opt.hotel!=='N/A'?opt.hotel+' – '+opt.type:'Once Off / Flexible'}</td></tr>
         ${hasHotelStay(opt)?`<tr><td style="color:#6b7280;padding:2px 0;">Booking</td><td><strong>${STAY_LABEL}</strong></td></tr>`:''}
+        ${memberPlan(m) ? `
+        <tr><td style="color:#6b7280;padding:2px 0;">Biennial Registration Component</td><td><strong>${fmt(totalReg12)} total</strong></td></tr>
+        <tr><td style="color:#6b7280;padding:2px 0;">Accommodation Component</td><td><strong>${fmt(totalAccom12)} total</strong></td></tr>
+        <tr style="border-top:1px solid #bfdbfe;"><td style="color:#1a3a6b;font-weight:700;padding:4px 0;">Payment Plan</td><td style="font-weight:700;color:#1a3a6b;">${nMo} monthly instalments from ${letterMonthLabel(mSched[0])} (see schedule below)</td></tr>`
+        : `
         <tr><td style="color:#6b7280;padding:2px 0;">Biennial Registration Component</td><td><strong>${isFlexAmount?'Flexible':fmt(m.expectedReg)+' per month (R'+fmt(totalReg12).replace('R','')+' total)'}</strong></td></tr>
         <tr><td style="color:#6b7280;padding:2px 0;">Accommodation Component</td><td><strong>${isFlexAmount?'Flexible':fmt(m.expectedAccom)+' per month (R'+fmt(totalAccom12).replace('R','')+' total)'}</strong></td></tr>
-        <tr style="border-top:1px solid #bfdbfe;"><td style="color:#1a3a6b;font-weight:700;padding:4px 0;">Monthly Instalment (Total)</td><td style="font-weight:700;color:#1a3a6b;">${isFlexAmount?'Flexible':fmt(m.expectedMonthlyTotal)+' per month over '+nMo+' months'}</td></tr>
+        <tr style="border-top:1px solid #bfdbfe;"><td style="color:#1a3a6b;font-weight:700;padding:4px 0;">Monthly Instalment (Total)</td><td style="font-weight:700;color:#1a3a6b;">${isFlexAmount?'Flexible':fmt(m.expectedMonthlyTotal)+' per month over '+nMo+' months'}</td></tr>`}
         <tr><td style="color:#6b7280;padding:2px 0;">Total Contribution (${nMo} months)</td><td><strong>${isFlexAmount?'Flexible':fmt(totalExpected12)}</strong></td></tr>
         <tr><td style="color:#6b7280;padding:2px 0;">Contribution Period</td><td>${letterMonthLabel(mSched[0])} – ${letterMonthLabel(mSched[mSched.length-1])}</td></tr>
       </table>
@@ -5355,8 +5543,8 @@ function buildPlainTextStatement(m){
   const mSched = memberSchedule(m);
   const ptMonthLabel = (k)=>{ const [y,mm]=k.split('-'); return ['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][+mm]+' '+y; };
   const totalExpected12 = isFlexAmount ? 0 : memberExpectedTotal(m);
-  const totalReg12 = isFlexAmount ? 0 : parseFloat((m.expectedReg * nMo).toFixed(2));
-  const totalAccom12 = isFlexAmount ? 0 : parseFloat((m.expectedAccom * nMo).toFixed(2));
+  const totalReg12 = isFlexAmount ? 0 : memberRegTotal(m);
+  const totalAccom12 = isFlexAmount ? 0 : memberAccomTotal(m);
   const deadline = document.getElementById('comms-deadline')?.value||'31 May 2027';
   const finsecName = document.getElementById('comms-finsec-name')?.value||'Mr Dumisani Mphasane';
   const fromEmail = 'nedloregistration@gmail.com';
@@ -5394,9 +5582,15 @@ function buildPlainTextStatement(m){
   lines.push('1. SELECTED OPTION');
   lines.push('   Option: '+m.accommodationOption+(opt.hotel&&opt.hotel!=='N/A'?' - '+opt.hotel+' ('+opt.type+')':' - Once Off / Flexible'));
   if(hasHotelStay(opt)) lines.push('   Booking: '+STAY_LABEL);
-  lines.push('   Biennial Registration: '+(isFlexAmount?'Flexible':fmt(m.expectedReg)+'/mo ('+fmt(totalReg12)+' total)'));
-  lines.push('   Accommodation: '+(isFlexAmount?'Flexible':fmt(m.expectedAccom)+'/mo ('+fmt(totalAccom12)+' total)'));
-  lines.push('   Monthly Instalment: '+(isFlexAmount?'Flexible':fmt(m.expectedMonthlyTotal)));
+  if(memberPlan(m)){
+    lines.push('   Biennial Registration: '+fmt(totalReg12)+' total');
+    lines.push('   Accommodation: '+fmt(totalAccom12)+' total');
+    lines.push('   Payment plan: '+nMo+' monthly instalments from '+ptMonthLabel(mSched[0]));
+  } else {
+    lines.push('   Biennial Registration: '+(isFlexAmount?'Flexible':fmt(m.expectedReg)+'/mo ('+fmt(totalReg12)+' total)'));
+    lines.push('   Accommodation: '+(isFlexAmount?'Flexible':fmt(m.expectedAccom)+'/mo ('+fmt(totalAccom12)+' total)'));
+    lines.push('   Monthly Instalment: '+(isFlexAmount?'Flexible':fmt(m.expectedMonthlyTotal)));
+  }
   lines.push('   Total ('+nMo+' months): '+(isFlexAmount?'Flexible':fmt(totalExpected12)));
   lines.push('');
   lines.push('2. PAYMENTS RECEIVED');
@@ -5412,7 +5606,15 @@ function buildPlainTextStatement(m){
   lines.push('   TOTAL RECEIVED: '+fmt(actualPaid)+' ('+uniqueEntries.length+' payment(s))');
   lines.push('');
   lines.push('3. PAYMENT SCHEDULE ('+ptMonthLabel(mSched[0])+' - '+ptMonthLabel(mSched[mSched.length-1])+')');
+  const ptAlloc = memberPlan(m) ? NedloPlan.allocate(memberPlan(m), actualPaid) : null;
   mSched.map(k=>({key:k,label:ptMonthLabel(k)})).forEach((mo, idx)=>{
+    if(ptAlloc){
+      const pr = ptAlloc.rows[idx];
+      let st = pr.status==='PAID' ? 'RECEIVED' : pr.status==='PARTIAL' ? 'PART PAID ('+fmt(pr.paid)+' of '+fmt(pr.due)+')'
+             : (mo.key <= currentMonthKey() ? 'OUTSTANDING' : 'Not yet due');
+      lines.push('   '+mo.label.padEnd(10)+' '+fmt(pr.due)+'   '+st);
+      return;
+    }
     let status;
     if(!isFlexAmount && idx < monthsCovered) status='RECEIVED';
     else if(elapsed.some(e=>e.key===mo.key)) status='OUTSTANDING';
@@ -5427,7 +5629,9 @@ function buildPlainTextStatement(m){
   if(creditAmt>0.05) lines.push('   Credit Balance:          '+fmt(creditAmt)+' (paid in excess of total due)');
   lines.push('');
   if(!isFullyPaid){
-    lines.push('Please note: due date for Biennial Registration is 31 December 2026 (required to register members with CLO).');
+    lines.push((memberPlan(m) && mSched[0] > NedloPlan.REG_END)
+      ? 'Please note: Biennial Registration is due in full in '+ptMonthLabel(mSched[0])+' (registration closed on 31 December 2026; required to register members with CLO).'
+      : 'Please note: due date for Biennial Registration is 31 December 2026 (required to register members with CLO).');
     lines.push('Should the balance not be settled by '+deadline+', your accommodation allocation may be affected.');
     lines.push('');
     lines.push('BANKING DETAILS:');
@@ -5606,7 +5810,7 @@ function exportDashboard(format){
   DB.members.forEach(m=>{
     let missed=0;
     memberElapsed(m).forEach(mk=>{
-      totalExp+=m.expectedMonthlyTotal;
+      totalExp+=dueForMonth(m, mk);
       const slot=m.ledger?.[mk];
       if(slot?.status==='PAID') totalRec+=slot.received; else missed++;
     });
@@ -5641,7 +5845,7 @@ function exportDashboard(format){
     members.forEach(m=>{
       let paid=false;
       memberElapsed(m).forEach(mk=>{
-        confExp+=m.expectedMonthlyTotal;
+        confExp+=dueForMonth(m, mk);
         const slot=m.ledger?.[mk];
         if(slot?.status==='PAID'){confRec+=slot.received; paid=true;}
       });

@@ -41,6 +41,9 @@ ALTER TABLE members ADD COLUMN IF NOT EXISTS is_clergy BOOLEAN DEFAULT false;
 -- Statement "sent" status is tracked per channel so Email / WhatsApp can be filtered separately
 ALTER TABLE members ADD COLUMN IF NOT EXISTS last_email_sent_at TIMESTAMPTZ;
 ALTER TABLE members ADD COLUMN IF NOT EXISTS last_whatsapp_sent_at TIMESTAMPTZ;
+-- Month-by-month payment plan for members who registered under the dynamic-schedule rules.
+-- NULL for everyone registered before that (they keep the flat monthly schedule).
+ALTER TABLE members ADD COLUMN IF NOT EXISTS plan JSONB;
 
 CREATE INDEX IF NOT EXISTS idx_members_ref ON members(payment_ref);
 CREATE INDEX IF NOT EXISTS idx_members_conf ON members(conference_code);

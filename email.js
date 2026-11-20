@@ -1,5 +1,8 @@
 import nodemailer from 'nodemailer';
 import dotenv from 'dotenv';
+// Shared payment-plan calculator (same file the browser uses) — registers itself as globalThis.NedloPlan
+import './public/plan.js';
+const NedloPlan = globalThis.NedloPlan;
 dotenv.config();
 
 const FROM_EMAIL = process.env.GMAIL_USER || 'nedloregistration@gmail.com';
@@ -99,11 +102,21 @@ const OPTIONS = {
   'OPT-6N':{hotel:'Garden Court',type:'Sharing',total:r2((4170+REG_TOTAL)/8),accom:r2(4170/8),reg:r2(REG_TOTAL/8),scheduleKey:'new'},
 };
 function fmt(n){ return 'R'+Number(n).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g,','); }
+// 4-night accommodation totals for the options the PUBLIC form offers (new cohort). The server
+// uses these to build each new member's payment plan itself, so prices and dates can't be
+// tampered with from the browser. Returns null for any other code (those keep the old flat logic).
+const ACCOM_TOTALS = { 'REG-ONLY':0, 'CAP-S':9800, 'CAP-SH':5520, 'CAT-S':6360, 'CAT-SH':3780,
+  'OPT-1N':15820, 'OPT-2N':8710, 'OPT-3N':17020, 'OPT-4N':8510, 'OPT-5N':7180, 'OPT-6N':4170 };
+export function getAccomTotal(code){
+  return Object.prototype.hasOwnProperty.call(ACCOM_TOTALS, code) ? ACCOM_TOTALS[code] : null;
+}
 // Hotel bookings are for 5 days / 4 nights. Shown only for options that include a hotel
 // (not Registration Only, and not once-off/flexible members with no hotel).
 const STAY_LABEL = '5 days / 4 nights';
 function hasHotelStay(opt){ return !!(opt && opt.hotel && opt.hotel!=='N/A' && opt.scheduleKey!=='regonly'); }
 function memberSchedule(m){
+  // Members registered under the dynamic-schedule rules carry their own month-by-month plan
+  if(m.plan && m.plan.length) return m.plan.map(r=>r.month);
   const opt = OPTIONS[m.accommodationOption];
   if(opt && opt.scheduleKey==='regonly') return SCHEDULES.regonly;
   if(m.cohort==='new') return SCHEDULES.new;
@@ -123,11 +136,12 @@ function wrapDoc(inner){
 export function buildStatementHTML(m, entries, settings={}){
   const opt = OPTIONS[m.accommodationOption]||{};
   const isFlex = opt.flexAmount;
+  const plan = (m.plan && m.plan.length) ? m.plan : null;   // dynamic-schedule member
   const mSched = memberSchedule(m);
   const nMo = mSched.length;
-  const totalExp12 = isFlex?0:r2(m.expectedMonthlyTotal*nMo);
-  const totalReg12 = isFlex?0:r2(m.expectedReg*nMo);
-  const totalAccom12 = isFlex?0:r2(m.expectedAccom*nMo);
+  const totalExp12 = isFlex?0:(plan ? NedloPlan.planTotal(plan) : r2(m.expectedMonthlyTotal*nMo));
+  const totalReg12 = isFlex?0:(plan ? NedloPlan.planRegTotal(plan) : r2(m.expectedReg*nMo));
+  const totalAccom12 = isFlex?0:(plan ? NedloPlan.planAccomTotal(plan) : r2(m.expectedAccom*nMo));
   const deadline = settings.deadline || '31 May 2027';
   const finsecName = settings.finsecName || 'Mr Dumisani Mphasane';
   const fromEmail = FROM_EMAIL;
@@ -152,7 +166,32 @@ export function buildStatementHTML(m, entries, settings={}){
   const elapsed = elapsedMonths(m);
 
   let scheduleRows='';
-  mSched.map(k=>({key:k,label:monthLabel(k)})).forEach((mo,idx)=>{
+  if(plan){
+    // Month-by-month plan: what is due each month, and how much of it has been paid
+    const alloc = NedloPlan.allocate(plan, actualPaid);
+    const cover = NedloPlan.coveringPayment(plan, uniqueEntries.map(e=>Number(e.creditAmount)));
+    const nowKey = NedloPlan.currentMonthKey();
+    alloc.rows.forEach((r,idx)=>{
+      let amtRec='&mdash;', dateRec='&mdash;', status, bg, color;
+      if(r.status==='PAID'){
+        amtRec=fmt(r.due); const e=uniqueEntries[cover[idx]]; dateRec=e?e.txnDate:'&mdash;';
+        status='Received'; bg='#f0fdf4'; color='#16a34a';
+      } else if(r.status==='PARTIAL'){
+        amtRec=fmt(r.paid); const e=uniqueEntries[uniqueEntries.length-1]; dateRec=e?e.txnDate:'&mdash;';
+        status='Partially Paid'; bg='#fefce8'; color='#b45309';
+      } else if(r.month<=nowKey){ status='Outstanding'; bg='#fef2f2'; color='#dc2626'; }
+      else { status='Not Yet Due'; bg='#fafafa'; color='#6b7280'; }
+      const split = (r.reg>0 && r.accom>0) ? `<div style="font-size:10px;color:#6b7280;font-weight:400;">Registration ${fmt(r.reg)} + Accommodation ${fmt(r.accom)}</div>` : '';
+      scheduleRows+=`<tr style="background:${bg};">
+        <td style="padding:5px 8px;border-bottom:1px solid #e5e7eb;">${monthLabel(r.month)}</td>
+        <td style="padding:5px 8px;border-bottom:1px solid #e5e7eb;text-align:right;">${fmt(r.due)}${split}</td>
+        <td style="padding:5px 8px;border-bottom:1px solid #e5e7eb;text-align:right;font-weight:600;">${amtRec}</td>
+        <td style="padding:5px 8px;border-bottom:1px solid #e5e7eb;">${dateRec}</td>
+        <td style="padding:5px 8px;border-bottom:1px solid #e5e7eb;font-weight:600;color:${color};">${status}</td>
+      </tr>`;
+    });
+  }
+  if(!plan) mSched.map(k=>({key:k,label:monthLabel(k)})).forEach((mo,idx)=>{
     let amtRec='&mdash;', dateRec='&mdash;', status='Not Yet Due', bg='#fafafa', color='#6b7280';
     const isElapsed = elapsed.some(e=>e===mo.key);
     if(!isFlex && idx<monthsCovered){
@@ -209,9 +248,9 @@ export function buildStatementHTML(m, entries, settings={}){
     <table style="width:100%;font-size:13px;">
       <tr><td style="color:#6b7280;width:220px;">Option</td><td><strong>${m.accommodationOption}${opt.hotel&&opt.hotel!=='N/A'?' '+DASH+' '+opt.hotel+' ('+opt.type+')':' '+DASH+' Once Off / Flexible'}</strong></td></tr>
       ${hasHotelStay(opt) ? `<tr><td style="color:#6b7280;">Booking</td><td><strong>${STAY_LABEL}</strong></td></tr>` : ''}
-      <tr><td style="color:#6b7280;">Biennial Registration</td><td>${isFlex?'Flexible':fmt(m.expectedReg)+'/mo ('+fmt(totalReg12)+' total)'}</td></tr>
-      <tr><td style="color:#6b7280;">Accommodation</td><td>${isFlex?'Flexible':fmt(m.expectedAccom)+'/mo ('+fmt(totalAccom12)+' total)'}</td></tr>
-      <tr><td style="color:#1a3a6b;font-weight:700;">Total (${nMo} months)</td><td style="font-weight:700;">${isFlex?'Flexible':fmt(totalExp12)}</td></tr>
+      <tr><td style="color:#6b7280;">Biennial Registration</td><td>${isFlex?'Flexible':(plan ? fmt(totalReg12)+' total' : fmt(m.expectedReg)+'/mo ('+fmt(totalReg12)+' total)')}</td></tr>
+      <tr><td style="color:#6b7280;">Accommodation</td><td>${isFlex?'Flexible':(plan ? fmt(totalAccom12)+' total' : fmt(m.expectedAccom)+'/mo ('+fmt(totalAccom12)+' total)')}</td></tr>
+      <tr><td style="color:#1a3a6b;font-weight:700;">Total (${nMo} ${plan?'payments':'months'})</td><td style="font-weight:700;">${isFlex?'Flexible':fmt(totalExp12)}</td></tr>
     </table>
     <div style="font-weight:700;color:#1a3a6b;margin:14px 0 6px;">PAYMENT SCHEDULE &amp; STATUS</div>
     <table style="width:100%;border-collapse:collapse;font-size:12px;">
@@ -240,25 +279,67 @@ export function buildStatementHTML(m, entries, settings={}){
 // --- Build a registration CONFIRMATION email (sent on self-registration) ---
 export function buildRegistrationConfirmationHTML(m){
   const opt = OPTIONS[m.accommodationOption] || {};
+  const plan = (m.plan && m.plan.length) ? m.plan : null;   // dynamic-schedule member
   const sched = memberSchedule(m);
   const nMo = sched.length;
   const monthly = Number(m.expectedMonthlyTotal)||0;
   const accomM  = Number(m.expectedAccom)||0;
   const regM    = Number(m.expectedReg)||0;
-  const totalCommit = r2(monthly*nMo);
-  const accomTotal  = r2(accomM*nMo);
-  const regTotal    = r2(regM*nMo);
+  const totalCommit = plan ? NedloPlan.planTotal(plan) : r2(monthly*nMo);
+  const accomTotal  = plan ? NedloPlan.planAccomTotal(plan) : r2(accomM*nMo);
+  const regTotal    = plan ? NedloPlan.planRegTotal(plan) : r2(regM*nMo);
   const surname = (m.fullName||'').trim().split(' ').pop();
   const periodLabel = `${monthLabel(sched[0])} ${DASH} ${monthLabel(sched[nMo-1])}`;
   const isRegOnly = opt.scheduleKey === 'regonly';
 
-  let scheduleRows = '';
-  sched.forEach((k,i)=>{
-    scheduleRows += `<tr style="background:${i%2?'#fafafa':'#fff'};">
+  // Cost breakdown rows, schedule intro and schedule table. Plan members get their real
+  // month-by-month amounts; everyone else gets exactly the layout they always had.
+  let costRows, scheduleIntro, scheduleTable;
+  if(plan){
+    const regMonths = plan.filter(r=>r.reg>0), accMonths = plan.filter(r=>r.accom>0);
+    const span = arr => arr.length>1 ? `${monthLabel(arr[0].month)} ${DASH} ${monthLabel(arr[arr.length-1].month)}` : monthLabel(arr[0].month);
+    costRows = `
+      ${isRegOnly ? '' : `<tr><td style="color:#6b7280;">Accommodation</td><td><strong>${fmt(accomTotal)}</strong> in ${accMonths.length} payment${accMonths.length===1?'':'s'} (${span(accMonths)})</td></tr>`}
+      <tr><td style="color:#6b7280;">Biennial Registration</td><td><strong>${fmt(regTotal)}</strong> ${regMonths.length>1 ? `in ${regMonths.length} payments (${span(regMonths)})` : `due in full in ${monthLabel(regMonths[0].month)}`}</td></tr>
+      <tr style="border-top:1px solid #e5e7eb;"><td style="color:#1a3a6b;font-weight:700;padding-top:6px;">First payment (due this month)</td><td style="font-weight:700;color:#1a3a6b;padding-top:6px;">${fmt(plan[0].due)}</td></tr>
+      <tr><td style="color:#1a3a6b;font-weight:700;">Total Commitment</td><td style="font-weight:800;color:#1a3a6b;">${fmt(totalCommit)} over ${nMo} payment${nMo===1?'':'s'}</td></tr>
+      <tr><td style="color:#6b7280;">Payment Period</td><td>${periodLabel}</td></tr>`;
+    scheduleIntro = `Your schedule starts this month and runs to ${monthLabel(plan[nMo-1].month)}. ${isRegOnly ? '' : 'The Biennial Registration is paid first (see the Registration column); '}the amounts for each month are:`;
+    const rows = plan.map((r,i)=>`<tr style="background:${i%2?'#fafafa':'#fff'};">
+      <td style="padding:5px 8px;border-bottom:1px solid #e5e7eb;">${monthLabel(r.month)}</td>
+      <td style="padding:5px 8px;border-bottom:1px solid #e5e7eb;text-align:right;">${r.reg>0?fmt(r.reg):'&mdash;'}</td>
+      ${isRegOnly ? '' : `<td style="padding:5px 8px;border-bottom:1px solid #e5e7eb;text-align:right;">${r.accom>0?fmt(r.accom):'&mdash;'}</td>`}
+      <td style="padding:5px 8px;border-bottom:1px solid #e5e7eb;text-align:right;font-weight:600;">${fmt(r.due)}</td>
+    </tr>`).join('');
+    scheduleTable = `<table style="width:100%;border-collapse:collapse;font-size:12px;">
+      <thead><tr style="background:#1a3a6b;color:#fff;"><th style="padding:7px;text-align:left;">Month</th><th style="padding:7px;text-align:right;">Registration</th>${isRegOnly ? '' : '<th style="padding:7px;text-align:right;">Accommodation</th>'}<th style="padding:7px;text-align:right;">Amount Due</th></tr></thead>
+      <tbody>${rows}
+        <tr style="background:#dbeafe;font-weight:700;"><td style="padding:7px;">TOTAL</td><td style="padding:7px;text-align:right;">${fmt(regTotal)}</td>${isRegOnly ? '' : `<td style="padding:7px;text-align:right;">${fmt(accomTotal)}</td>`}<td style="padding:7px;text-align:right;">${fmt(totalCommit)}</td></tr>
+      </tbody>
+    </table>`;
+  } else {
+    costRows = `
+      ${isRegOnly ? '' : `<tr><td style="color:#6b7280;">Accommodation</td><td>${fmt(accomM)}/mo &nbsp;&times;&nbsp; ${nMo} = <strong>${fmt(accomTotal)}</strong></td></tr>`}
+      <tr><td style="color:#6b7280;">Biennial Registration</td><td>${fmt(regM)}/mo &nbsp;&times;&nbsp; ${nMo} = <strong>${fmt(regTotal)}</strong></td></tr>
+      <tr style="border-top:1px solid #e5e7eb;"><td style="color:#1a3a6b;font-weight:700;padding-top:6px;">Monthly Instalment</td><td style="font-weight:700;color:#1a3a6b;padding-top:6px;">${fmt(monthly)} per month</td></tr>
+      <tr><td style="color:#1a3a6b;font-weight:700;">Total Commitment</td><td style="font-weight:800;color:#1a3a6b;">${fmt(totalCommit)} over ${nMo} months</td></tr>
+      <tr><td style="color:#6b7280;">Payment Period</td><td>${periodLabel}</td></tr>`;
+    scheduleIntro = `Please pay <strong>${fmt(monthly)}</strong> each month for ${nMo} months (${periodLabel}):`;
+    const rows = sched.map((k,i)=>`<tr style="background:${i%2?'#fafafa':'#fff'};">
       <td style="padding:5px 8px;border-bottom:1px solid #e5e7eb;">${monthLabel(k)}</td>
       <td style="padding:5px 8px;border-bottom:1px solid #e5e7eb;text-align:right;font-weight:600;">${fmt(monthly)}</td>
-    </tr>`;
-  });
+    </tr>`).join('');
+    scheduleTable = `<table style="width:100%;border-collapse:collapse;font-size:12px;">
+      <thead><tr style="background:#1a3a6b;color:#fff;"><th style="padding:7px;text-align:left;">Month</th><th style="padding:7px;text-align:right;">Amount Due</th></tr></thead>
+      <tbody>${rows}
+        <tr style="background:#dbeafe;font-weight:700;"><td style="padding:7px;">TOTAL</td><td style="padding:7px;text-align:right;">${fmt(totalCommit)}</td></tr>
+      </tbody>
+    </table>`;
+  }
+  // Registration deadline wording: a member who joins after December has no December left
+  const regDeadlineSentence = (plan && plan[0].month > NedloPlan.REG_END)
+    ? 'Your Biennial Registration portion is due in full this month in order to register you with CLO.'
+    : 'The Biennial Registration portion must be fully settled by <strong>31 December 2026</strong> in order to register you with CLO.';
 
   const body = `<div style="font-family:'Segoe UI',Arial,sans-serif;font-size:13px;color:#1f2937;max-width:700px;margin:0 auto;">
     <div style="border-bottom:3px solid #1a3a6b;padding-bottom:12px;margin-bottom:14px;">
@@ -284,21 +365,12 @@ export function buildRegistrationConfirmationHTML(m){
     <table style="width:100%;font-size:13px;">
       <tr><td style="color:#6b7280;width:200px;">Option</td><td><strong>${m.accommodationOption} ${DASH} ${opt.hotel||''}${opt.type?' ('+opt.type+')':''}</strong></td></tr>
       ${hasHotelStay(opt) ? `<tr><td style="color:#6b7280;">Booking</td><td><strong>${STAY_LABEL}</strong></td></tr>` : ''}
-      ${isRegOnly ? '' : `<tr><td style="color:#6b7280;">Accommodation</td><td>${fmt(accomM)}/mo &nbsp;&times;&nbsp; ${nMo} = <strong>${fmt(accomTotal)}</strong></td></tr>`}
-      <tr><td style="color:#6b7280;">Biennial Registration</td><td>${fmt(regM)}/mo &nbsp;&times;&nbsp; ${nMo} = <strong>${fmt(regTotal)}</strong></td></tr>
-      <tr style="border-top:1px solid #e5e7eb;"><td style="color:#1a3a6b;font-weight:700;padding-top:6px;">Monthly Instalment</td><td style="font-weight:700;color:#1a3a6b;padding-top:6px;">${fmt(monthly)} per month</td></tr>
-      <tr><td style="color:#1a3a6b;font-weight:700;">Total Commitment</td><td style="font-weight:800;color:#1a3a6b;">${fmt(totalCommit)} over ${nMo} months</td></tr>
-      <tr><td style="color:#6b7280;">Payment Period</td><td>${periodLabel}</td></tr>
+      ${costRows}
     </table>
 
     <div style="font-weight:700;color:#1a3a6b;margin:16px 0 6px;">PAYMENT SCHEDULE</div>
-    <p style="font-size:12px;color:#374151;margin-bottom:6px;">Please pay <strong>${fmt(monthly)}</strong> each month for ${nMo} months (${periodLabel}):</p>
-    <table style="width:100%;border-collapse:collapse;font-size:12px;">
-      <thead><tr style="background:#1a3a6b;color:#fff;"><th style="padding:7px;text-align:left;">Month</th><th style="padding:7px;text-align:right;">Amount Due</th></tr></thead>
-      <tbody>${scheduleRows}
-        <tr style="background:#dbeafe;font-weight:700;"><td style="padding:7px;">TOTAL</td><td style="padding:7px;text-align:right;">${fmt(totalCommit)}</td></tr>
-      </tbody>
-    </table>
+    <p style="font-size:12px;color:#374151;margin-bottom:6px;">${scheduleIntro}</p>
+    ${scheduleTable}
 
     <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px;padding:12px;margin:16px 0;">
       <div style="font-weight:700;color:#1a3a6b;margin-bottom:6px;">BANKING DETAILS</div>
@@ -312,7 +384,7 @@ export function buildRegistrationConfirmationHTML(m){
       <p style="margin-top:8px;font-size:11px;color:#6b7280;"><em>Please use your unique reference above for every payment so it is allocated correctly.</em></p>
     </div>
 
-    <p style="font-size:12px;color:#374151;">The Biennial Registration portion must be fully settled by <strong>31 December 2026</strong> in order to register you with CLO. We look forward to welcoming you to Sandton in August 2027.</p>
+    <p style="font-size:12px;color:#374151;">${regDeadlineSentence} We look forward to welcoming you to Sandton in August 2027.</p>
     <div style="border-top:1px solid #e5e7eb;padding-top:12px;margin-top:14px;font-size:12px;">
       <p>Yours in service,<br/><strong>NEDLO Financial Secretary</strong><br/><a href="mailto:${FROM_EMAIL}">${FROM_EMAIL}</a></p>
     </div>
